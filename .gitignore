@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Outputs and temporary artifacts
+outputs/
+report_out/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
