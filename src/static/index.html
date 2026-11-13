@@ -620,7 +620,10 @@
       <div>
         <div class="panel">
           <div class="tabs-header">
-            <button class="tab-btn active" onclick="switchTab('local_edit_map', this)">
+            <button class="tab-btn" id="tabBtnReceipt" onclick="switchTab('receipt_forensic_map', this)">
+              🧾 微信/转账凭证基线与字体取证 (WeChat Receipt Map)
+            </button>
+            <button class="tab-btn active" id="tabBtnLocalEdit" onclick="switchTab('local_edit_map', this)">
               🎯 1. 局部 AI 改图定位与 3x 放大镜 (Local Edit Map)
             </button>
             <button class="tab-btn" onclick="switchTab('visual_prompt', this)">
@@ -881,10 +884,12 @@
       document.getElementById('valPeak').textContent = `Z = ${localZ}σ | 框 ${editBbox}`;
       document.getElementById('barPeak').style.width = `${Math.min(100, localZ * 6)}%`;
 
+      const ra = caseData.receipt_analysis || {};
       const localFlag = le.is_localized_ai_edit
         ? [`LOCAL_AI_EDIT_DETECTED: 滑窗上下文差分锁定局部篡改框 ${editBbox} (峰值 Z=${localZ}σ, 篡改面积占比 ${(le.tampered_area_fraction * 100).toFixed(2)}%)`]
         : [];
       const evList = [
+        ...(ra.receipt_forensic_flags || []),
         ...localFlag,
         ...(ua.universal_mathematical_proofs || []),
         ...(df.underlying_framework_flags || []),
@@ -896,7 +901,13 @@
       }).join('');
 
       document.getElementById('promptTextarea').value = caseData.forensic_prompt_markdown || '';
-      updateVisualStage();
+      if (ra.is_forged_receipt) {
+        switchTab('receipt_forensic_map', document.getElementById('tabBtnReceipt'));
+      } else if (currentTab === 'receipt_forensic_map') {
+        switchTab('local_edit_map', document.getElementById('tabBtnLocalEdit'));
+      } else {
+        updateVisualStage();
+      }
     }
 
     function switchTab(tabKey, btnEl) {
@@ -922,7 +933,10 @@
       imgStage.style.display = 'flex';
       promptStage.style.display = 'none';
 
-      if (currentTab === 'local_edit_map') {
+      if (currentTab === 'receipt_forensic_map') {
+        imgEl.src = currentCase.images.receipt_forensic_map || currentCase.images.local_edit_map;
+        capEl.textContent = '左：微信/支付凭证双列对齐轴 (青色左列基准轴 / 蓝色右列数值轴) 与同行水平基线标尺 | 右：PS贴字基线错位与坐标轴偏移 3 倍高清像素放大镜';
+      } else if (currentTab === 'local_edit_map') {
         imgEl.src = currentCase.images.local_edit_map || currentCase.images.visual_prompt;
         capEl.textContent = '左：局部 AI 改图/重绘边界框定位 | 中：32x32 滑窗上下文差分 Z-Score 热力图 | 右：篡改区域 3 倍高清放大镜（检视边缘截断与网格）';
       } else if (currentTab === 'visual_prompt') {

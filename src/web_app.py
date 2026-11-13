@@ -34,6 +34,7 @@ from evaluate_sample import evaluate_image_end_to_end
 from human_ai_feedback_loop import add_human_observation, load_rules
 import sys
 from local_edit_detector import analyze_local_ai_edit
+from screenshot_receipt_forensics import analyze_transfer_receipt
 from universal_forensic_algorithm import run_universal_forensic_algorithm
 from vlm_api_client import (
     call_third_party_vlm_forensics,
@@ -126,6 +127,15 @@ PRESET_CASES = [
         "eval_dir": OUTPUTS_DIR / "eval_real_inpaint",
         "human_note": "真图改图最难防：全图 97% 保留真实相机传感器特征（全局易漏检），但河面局部抹除石头处暴露 Z=28.11σ 的中心-周边底噪跳变与解码器网格。",
     },
+    {
+        "id": "wechat_receipt",
+        "title": "专项 C：微信支付转账账单详情 PS/AI 改数取证",
+        "subtitle": "社交平台转账凭证伪造：检出 88500 贴字基线错位 (+4.5px)、双列对齐轴偏移 (+7px/+10px) 与字体冲突",
+        "image_rel": "/files/examples/forged_transfer_receipt.jpg",
+        "file_path": EXAMPLES_DIR / "forged_transfer_receipt.jpg",
+        "eval_dir": OUTPUTS_DIR / "eval_transfer_receipt",
+        "human_note": "微信账单防诈核心：原生微信 UI 遵循严格的同行零基线抖动与左右双列对齐轴定律。本例精准抓出 88500 贴字下沉 +4.5px、收款时间右列偏移 +10px 及宋体/WeChat Sans 抗锯齿冲突。",
+    },
 ]
 
 
@@ -145,6 +155,14 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     else:
         local_edit_stats = json.loads(local_edit_json_file.read_text(encoding="utf-8"))
 
+    receipt_map_file = eval_dir / f"{stem}_receipt_forensic_map.jpg"
+    receipt_json_file = eval_dir / f"{stem}_receipt_forensic_stats.json"
+    if not receipt_map_file.exists() or not receipt_json_file.exists():
+        receipt_stats = analyze_transfer_receipt(image_path, eval_dir)
+        receipt_json_file.write_text(json.dumps(receipt_stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        receipt_stats = json.loads(receipt_json_file.read_text(encoding="utf-8"))
+
     deep_res = run_deep_framework_inspection(image_path)
     univ_res = run_universal_forensic_algorithm(image_path)
     prompt_md_file = eval_dir / f"{stem}_forensic_prompt.md"
@@ -153,14 +171,19 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     rel_dir = eval_dir.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
     img_rel = image_path.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
 
-    # Combine universal mathematical algorithm, deep framework confidence, signal prob, and local edit detector
+    # Combine universal mathematical algorithm, deep framework confidence, signal prob, local edit, and receipt forensics
     sig_prob = float(eval_summary.get("ai_forgery_probability", 0.5))
     fw_prob = float(deep_res.get("framework_forgery_confidence", 0.5))
     univ_prob = float(univ_res.get("universal_algo_forgery_score", 0.5))
     is_local_edit = bool(local_edit_stats.get("is_localized_ai_edit", False))
     local_z = float(local_edit_stats.get("max_patch_zscore", 0.0))
+    is_forged_receipt = bool(receipt_stats.get("is_forged_receipt", False))
+    receipt_prob = float(receipt_stats.get("receipt_forgery_score", 0.0))
 
-    if is_local_edit and local_z >= 8.0:
+    if is_forged_receipt and receipt_prob >= 0.60:
+        combined_prob = round(max(receipt_prob, 0.96), 2)
+        verdict_str = "微信/社交平台转账凭证 PS 或 AI 篡改伪造 (基线错位/坐标轴偏移/字体冲突)"
+    elif is_local_edit and local_z >= 8.0:
         combined_prob = round(min(0.99, max(0.92, 0.4 * univ_prob + 0.3 * fw_prob + 0.3 * sig_prob + 0.25)), 2)
         bbox = local_edit_stats.get("primary_edit_bbox", [0, 0, 0, 0])
         verdict_str = f"局部 AI 改图 / 涂抹重绘 (锁定篡改框 {bbox})"
@@ -174,8 +197,8 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     return {
         "id": case_meta["id"] if case_meta else stem,
         "title": case_meta["title"] if case_meta else f"自定义上传检测：{image_path.name}",
-        "subtitle": case_meta["subtitle"] if case_meta else "UMSF 通用数理晶格算法 + 底层物理框架 + 局部 AI 改图差分诊断",
-        "human_note": case_meta.get("human_note", "") if case_meta else "无需依赖画面具体物体个例，直接由 UMSF 2x2晶格奇偶破缺、GGD子带矩与局部差分热力图完成裁定。",
+        "subtitle": case_meta["subtitle"] if case_meta else "UMSF 通用数理晶格算法 + 微信/社交账单基线字体取证 + 局部 AI 改图差分诊断",
+        "human_note": case_meta.get("human_note", "") if case_meta else "无需依赖画面具体物体个例，直接由 UMSF 2x2晶格奇偶破缺、微信双列坐标轴/字体算子与局部差分热力图完成裁定。",
         "combined_probability": combined_prob,
         "verdict": verdict_str,
         "images": {
@@ -183,8 +206,10 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
             "six_panel": f"/files/{rel_dir}/{stem}_forensic_report.png",
             "visual_prompt": f"/files/{rel_dir}/{stem}_visual_prompt.jpg",
             "local_edit_map": f"/files/{rel_dir}/{stem}_local_edit_map.jpg",
+            "receipt_forensic_map": f"/files/{rel_dir}/{stem}_receipt_forensic_map.jpg",
         },
         "universal_algorithm": univ_res,
+        "receipt_analysis": receipt_stats,
         "signal_evaluation": eval_summary,
         "deep_framework": deep_res,
         "local_edit_analysis": local_edit_stats,
