@@ -186,6 +186,23 @@ def build_structured_forensic_prompt(
     )
     risk_flags = ", ".join(meta["metadata_risk_flags"]) if meta["metadata_risk_flags"] else "无明显元数据剥离异常"
 
+    # Dynamically load accumulated Human Expert Forensic Rules from data/human_forensic_rules.json
+    rules_path = Path(__file__).resolve().parent.parent / "data" / "human_forensic_rules.json"
+    human_rules_section = ""
+    if rules_path.exists():
+        try:
+            rules_list = json.loads(rules_path.read_text(encoding="utf-8"))
+            if rules_list:
+                formatted_rules = "\n".join(
+                    [
+                        f"  - **{r['rule_id']} [{r['category']}]**：{r['compiled_prompt_rule']}"
+                        for r in rules_list
+                    ]
+                )
+                human_rules_section = f"\n## 二（补充）、人类专家实战沉淀的优先排查法则（Human-in-the-Loop Rules）\n{formatted_rules}\n"
+        except Exception:
+            pass
+
     prompt = f"""# 数字图像微观取证与去偏审阅任务（PixelSentinel Forensic Prompt）
 
 请作为数字图像取证专家审阅附带的图片（建议同时附带原图与 `visual_prompt_composite.jpg`）。
@@ -199,7 +216,7 @@ def build_structured_forensic_prompt(
 - **局部块异常峰值倍率**：`{debias_stats['patch_anomaly_max_ratio']}x`
 - **算法锁定的 Top-{len(suspicious_boxes)} 高疑局部区域（已在视觉提示图中用红/橙框标出）**：
 {boxes_desc}
-
+{human_rules_section}
 ---
 
 ## 二、请你严格按以下 4 个微观视角进行核查（重点关注候选框 #{suspicious_boxes[0]['rank'] if suspicious_boxes else 1}）

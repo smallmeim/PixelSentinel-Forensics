@@ -49,6 +49,40 @@ def compute_spectral_rolloff_ratio(img_gray: np.ndarray) -> float:
     return round(ratio, 4)
 
 
+def compute_stroke_font_regularity(img_gray: np.ndarray, boxes: list) -> Dict[str, float]:
+    """
+    Quantify HUMAN-RULE-002 ("手写字太像印刷体 / Font-like Regularity in AI Handwriting"):
+    In authentic handwriting, dark ink pixels inside strokes exhibit high intensity variance
+    due to pen pressure changes and ink pooling at intersections. In AI-generated or
+    OpenCut font-rendered handwriting, stroke interiors have unnaturally uniform intensity
+    and mechanical stroke-edge gradient regularity.
+    """
+    if not boxes:
+        return {"stroke_uniformity_index": 0.0, "ink_pressure_cv": 0.0}
+
+    # Inspect the top suspicious text/stroke regions
+    cvs = []
+    for b in boxes[:3]:
+        x0, y0, x1, y1 = b["bbox_xyxy"]
+        patch = img_gray[y0:y1, x0:x1]
+        if patch.size == 0:
+            continue
+        # Threshold darkest 15% pixels as ink stroke foreground
+        thresh = np.percentile(patch, 15)
+        ink_pixels = patch[patch <= thresh]
+        if ink_pixels.size > 10:
+            cv = float(np.std(ink_pixels) / (np.mean(ink_pixels) + 1.0))
+            cvs.append(cv)
+
+    mean_cv = float(np.mean(cvs)) if cvs else 0.15
+    # Lower ink pressure CV means flatter, more printed/font-like uniform strokes
+    uniformity_index = round(float(np.clip(1.0 - (mean_cv / 0.25), 0.0, 1.0)), 4)
+    return {
+        "stroke_uniformity_index": uniformity_index,
+        "ink_pressure_cv": round(mean_cv, 4),
+    }
+
+
 def evaluate_image_end_to_end(image_path: Path, output_dir: Path) -> Dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -66,6 +100,7 @@ def evaluate_image_end_to_end(image_path: Path, output_dir: Path) -> Dict[str, A
     debias = toolkit_report["debias_and_complexity_analysis"]
     sig = toolkit_report["signal_statistics"]
     boxes = prompt_pack["suspicious_boxes"]
+    stroke_stats = compute_stroke_font_regularity(img_gray, boxes)
 
     evidence_points = []
     suspicion_score = 0.0
@@ -89,6 +124,14 @@ def evaluate_image_end_to_end(image_path: Path, output_dir: Path) -> Dict[str, A
         )
         suspicion_score += 0.25
 
+    if stroke_stats["stroke_uniformity_index"] > 0.45:
+        evidence_points.append(
+            f"FONT_LIKE_STROKE_UNIFORMITY (HUMAN-RULE-002): 候选文字区笔画内部墨色均匀度高达 "
+            f"{stroke_stats['stroke_uniformity_index']} (压感变异系数 CV={stroke_stats['ink_pressure_cv']})，"
+            f"缺乏真实手写顿笔与飞白，呈‘印刷体化’AI字形特征 (+0.20)"
+        )
+        suspicion_score += 0.20
+
     if spectral_ratio < 0.72:
         evidence_points.append(
             f"SPECTRAL_ROLLOFF: 2D-FFT 高频/中频能量比偏低 ({spectral_ratio})，符合生成模型高频纹理衰减特征 (+0.20)"
@@ -103,6 +146,7 @@ def evaluate_image_end_to_end(image_path: Path, output_dir: Path) -> Dict[str, A
         "model_verdict": verdict,
         "ai_forgery_probability": suspicion_score,
         "spectral_high_mid_ratio": spectral_ratio,
+        "stroke_regularity_metrics": stroke_stats,
         "complexity_tier": debias["complexity_tier"],
         "debiased_rdd_score": debias["debiased_calibrated_score"],
         "top_suspicious_boxes": boxes,
