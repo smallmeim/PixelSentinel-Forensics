@@ -90,7 +90,8 @@ def _patch_vae_harmonic_score(res_patch: np.ndarray, gray_patch: np.ndarray) -> 
             sub = np.clip(res_patch[y0 : y0 + win, x0 : x0 + win], -6.0, 6.0)
             fft_mag = np.abs(np.fft.fft2(sub - np.mean(sub)))
             med_fft = float(np.median(fft_mag[1:, 1:])) + 1e-5
-            diag_e = float(max(fft_mag[8, 8], fft_mag[4, 4]))
+            # Weight period-4px (fft_mag[8,8], immune to 8x8 JPEG block boundaries) higher than period-8px (fft_mag[4,4])
+            diag_e = float(0.75 * fft_mag[8, 8] + 0.25 * fft_mag[4, 4])
             best_snr = max(best_snr, diag_e / med_fft)
     return best_snr
 
@@ -175,17 +176,16 @@ def _segment_peer_word_tokens(gray: np.ndarray, rgb: np.ndarray) -> List[List[in
         dtype=np.float32,
     )
 
-    # True ink strokes on neutral paper: require strong stroke contrast (> 56) & gradient (> 46) so empty ruling lines never trigger
+    # True ink strokes on paper (supports white or cream/aged paper, and blue/black/gray/red ink):
+    # Require bright paper background (bg_map > 168) + strong local ink darkness (> 54) + sharp stroke edge gradient (> 45)
     gx = np.abs(np.diff(gray, axis=1, prepend=gray[:, :1]))
     gy = np.abs(np.diff(gray, axis=0, prepend=gray[:1, :]))
     grad = np.hypot(gx, gy)
-    blue_excess = rgb[:, :, 2] - rgb[:, :, 0]
     ink = (
         (bg_map > 168.0)
-        & (paper_chroma < 20.0)
-        & ((bg_map - gray) > 56.0)
-        & (grad > 46.0)
-        & (blue_excess > 8.0)
+        & (paper_chroma < 45.0)
+        & ((bg_map - gray) > 54.0)
+        & (grad > 45.0)
     )
 
     # Ignore contiguous vertical table divider lines (unbroken vertical runs >= 45px)
@@ -290,8 +290,8 @@ def analyze_opencut_tampering(image_path: Path, output_dir: Path) -> Dict[str, A
 
         atten_ratio, phase_shift = _measure_sub_stroke_ruling_attenuation(gray, [ex0, ey0, ex1, ey1])
 
-        # Composite OpenCut physical anomaly raw index for this word token
-        raw_index = vae_harm * (1.0 + 0.8 * feather_step) * (1.0 + 0.6 * atten_ratio + 0.15 * min(3.0, phase_shift))
+        # Linear, scale-invariant composite OpenCut physical anomaly index (avoids quadratic tail inflation on real JPEGs)
+        raw_index = vae_harm + 0.55 * feather_step + 1.2 * atten_ratio
         token_records.append(
             {
                 "token_id": idx,
@@ -307,7 +307,7 @@ def analyze_opencut_tampering(image_path: Path, output_dir: Path) -> Dict[str, A
     if len(token_records) >= 4:
         vals = np.array([t["raw_opencut_index"] for t in token_records], dtype=np.float32)
         med = float(np.median(vals))
-        mad = float(np.median(np.abs(vals - med))) + 0.04
+        mad = float(np.median(np.abs(vals - med))) + 0.12
         for t in token_records:
             z = (t["raw_opencut_index"] - med) / (1.4826 * mad)
             t["peer_zscore"] = round(float(max(0.0, z)), 2)
@@ -346,7 +346,7 @@ def analyze_opencut_tampering(image_path: Path, output_dir: Path) -> Dict[str, A
             peer_tok = token_records[len(token_records) // 2]
 
     max_peer_z = float(top_tok["peer_zscore"]) if top_tok else 0.0
-    is_opencut = max_peer_z >= 5.5 and (top_tok["vae_harmonic_energy"] >= 0.45 if top_tok else False)
+    is_opencut = max_peer_z >= 5.5 and (top_tok["vae_harmonic_energy"] >= 4.2 if top_tok else False)
 
     flags: List[str] = []
     if is_opencut and top_tok is not None:

@@ -194,8 +194,8 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     if is_forged_receipt and receipt_prob >= 0.60:
         combined_prob = round(max(receipt_prob, 0.96), 2)
         verdict_str = "微信/社交平台转账凭证 PS 或 AI 篡改伪造 (基线错位/坐标轴偏移/字体冲突)"
-    elif is_opencut and opencut_z >= 8.0:
-        combined_prob = 0.99
+    elif is_opencut and opencut_z >= 5.5:
+        combined_prob = round(min(0.99, max(0.85, float(opencut_stats.get("opencut_confidence", 0.85)))), 2)
         oc_bbox = opencut_stats.get("primary_opencut_token", {}).get("bbox", [0, 0, 0, 0])
         verdict_str = f"OpenCut 局部无痕换字 / 同笔迹扩散篡改 (锁定字框 {oc_bbox}, 同页互校 Z={opencut_z}σ)"
     elif is_local_edit and local_z >= 8.0:
