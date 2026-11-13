@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, urlparse
 from deep_framework_forensics import run_deep_framework_inspection
 from evaluate_sample import evaluate_image_end_to_end
 from human_ai_feedback_loop import add_human_observation, load_rules
+import sys
 from local_edit_detector import analyze_local_ai_edit
 from vlm_api_client import (
     call_third_party_vlm_forensics,
@@ -40,7 +41,11 @@ from vlm_api_client import (
     save_api_config,
 )
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent.parent
+)
 STATIC_DIR = ROOT_DIR / "src" / "static"
 EXAMPLES_DIR = ROOT_DIR / "examples"
 OUTPUTS_DIR = ROOT_DIR / "outputs"

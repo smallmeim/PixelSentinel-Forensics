@@ -267,9 +267,54 @@ def save_diagnostic_panel(
         fig.savefig(out_png, bbox_inches="tight")
         plt.close(fig)
     except Exception:
-        # Lightweight PIL fallback
-        norm_srm = np.uint8(255 * (srm_map / (np.max(srm_map) + 1e-6)))
-        Image.fromarray(norm_srm).save(out_png)
+        # Pure PIL + NumPy 6-panel composite renderer (zero matplotlib dependency)
+        from PIL import ImageDraw
+        tw, th = 380, 260
+        pad = 16
+        header_h = 46
+        canvas_w = tw * 3 + pad * 4
+        canvas_h = header_h + (th + 28) * 2 + pad * 2
+        canvas = Image.new("RGB", (canvas_w, canvas_h), (12, 18, 34))
+        draw = ImageDraw.Draw(canvas)
+        draw.text(
+            (pad, 14),
+            f"PixelSentinel 6-Panel Forensic Report | {stats['complexity_tier']} | RDD: {stats['debiased_calibrated_score']}",
+            fill=(0, 245, 212),
+        )
+
+        def to_heatmap(arr2d: np.ndarray, scheme: str) -> Image.Image:
+            norm = (arr2d - float(np.min(arr2d))) / (float(np.ptp(arr2d)) + 1e-6)
+            norm = np.clip(norm, 0.0, 1.0)
+            if scheme == "inferno":
+                r = np.uint8(np.clip(norm * 2.0, 0, 1) * 255)
+                g = np.uint8(np.clip((norm - 0.3) * 1.8, 0, 1) * 255)
+                b = np.uint8(np.clip(0.5 - np.abs(norm - 0.5), 0, 1) * 220)
+            elif scheme == "viridis":
+                r = np.uint8(norm**1.5 * 240)
+                g = np.uint8(norm * 230 + 20)
+                b = np.uint8((1.0 - norm * 0.6) * 180)
+            else:
+                r = np.uint8(np.clip((norm - 0.35) * 2.2, 0, 1) * 255)
+                g = np.uint8(np.clip(1.0 - np.abs(norm - 0.5) * 2.2, 0, 1) * 240)
+                b = np.uint8(np.clip((0.65 - norm) * 2.2, 0, 1) * 255)
+            rgb = np.stack([r, g, b], axis=-1)
+            return Image.fromarray(rgb).resize((tw, th), Image.Resampling.BICUBIC)
+
+        panels = [
+            ("1. Input Image (RGB)", img_rgb.resize((tw, th), Image.Resampling.LANCZOS)),
+            ("2. ELA Recompression Residual", to_heatmap(ela_map, "inferno")),
+            ("3. SRM High-Freq Noise Residual", to_heatmap(srm_map, "viridis")),
+            ("4. Stroke & Edge Micro-Gradient", to_heatmap(edge_map, "inferno")),
+            ("5. Patch Background Complexity", to_heatmap(complexity_map, "viridis")),
+            ("6. Reference-Debiased Anomaly (RDD)", to_heatmap(anomaly_map, "jet")),
+        ]
+        for idx, (title, pim) in enumerate(panels):
+            row, col = divmod(idx, 3)
+            x0 = pad + col * (tw + pad)
+            y0 = header_h + row * (th + 28 + pad // 2)
+            draw.text((x0, y0), title, fill=(230, 238, 248))
+            canvas.paste(pim, (x0, y0 + 20))
+        canvas.save(out_png)
 
 
 def analyze_image(image_path: Path, output_dir: Path) -> Dict[str, Any]:

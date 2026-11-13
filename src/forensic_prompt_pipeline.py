@@ -187,7 +187,13 @@ def build_structured_forensic_prompt(
     risk_flags = ", ".join(meta["metadata_risk_flags"]) if meta["metadata_risk_flags"] else "无明显元数据剥离异常"
 
     # Dynamically load accumulated Human Expert Forensic Rules from data/human_forensic_rules.json
-    rules_path = Path(__file__).resolve().parent.parent / "data" / "human_forensic_rules.json"
+    import sys
+    base_root = (
+        Path(sys.executable).resolve().parent
+        if getattr(sys, "frozen", False)
+        else Path(__file__).resolve().parent.parent
+    )
+    rules_path = base_root / "data" / "human_forensic_rules.json"
     human_rules_section = ""
     if rules_path.exists():
         try:

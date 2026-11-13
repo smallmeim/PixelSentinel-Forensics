@@ -19,6 +19,13 @@ report_out/
 # Local API Keys & User Config (Never commit keys!)
 config/api_config.json
 
+# PyInstaller & Release build directories
+build/
+dist/
+release_build/
+*.spec
+*.zip
+
 # OS & Editor files
 .DS_Store
 Thumbs.db

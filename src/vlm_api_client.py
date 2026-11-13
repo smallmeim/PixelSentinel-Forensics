@@ -27,12 +27,17 @@ import json
 import re
 import urllib.error
 import urllib.request
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from PIL import Image
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent.parent
+)
 CONFIG_DIR = ROOT_DIR / "config"
 CONFIG_FILE = CONFIG_DIR / "api_config.json"
 
