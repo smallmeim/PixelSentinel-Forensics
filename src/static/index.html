@@ -620,6 +620,9 @@
       <div>
         <div class="panel">
           <div class="tabs-header">
+            <button class="tab-btn" id="tabBtnOpenCut" onclick="switchTab('opencut_forensic_map', this)">
+              ✂️ OpenCut 无痕换字同页互校 (OpenCut Peer Map)
+            </button>
             <button class="tab-btn" id="tabBtnReceipt" onclick="switchTab('receipt_forensic_map', this)">
               🧾 微信/转账凭证基线与字体取证 (WeChat Receipt Map)
             </button>
@@ -885,10 +888,12 @@
       document.getElementById('barPeak').style.width = `${Math.min(100, localZ * 6)}%`;
 
       const ra = caseData.receipt_analysis || {};
+      const oc = caseData.opencut_analysis || {};
       const localFlag = le.is_localized_ai_edit
         ? [`LOCAL_AI_EDIT_DETECTED: 滑窗上下文差分锁定局部篡改框 ${editBbox} (峰值 Z=${localZ}σ, 篡改面积占比 ${(le.tampered_area_fraction * 100).toFixed(2)}%)`]
         : [];
       const evList = [
+        ...(oc.opencut_forensic_flags || []),
         ...(ra.receipt_forensic_flags || []),
         ...localFlag,
         ...(ua.universal_mathematical_proofs || []),
@@ -903,7 +908,9 @@
       document.getElementById('promptTextarea').value = caseData.forensic_prompt_markdown || '';
       if (ra.is_forged_receipt) {
         switchTab('receipt_forensic_map', document.getElementById('tabBtnReceipt'));
-      } else if (currentTab === 'receipt_forensic_map') {
+      } else if (oc.is_opencut_tampered) {
+        switchTab('opencut_forensic_map', document.getElementById('tabBtnOpenCut'));
+      } else if (currentTab === 'receipt_forensic_map' || currentTab === 'opencut_forensic_map') {
         switchTab('local_edit_map', document.getElementById('tabBtnLocalEdit'));
       } else {
         updateVisualStage();
@@ -933,7 +940,10 @@
       imgStage.style.display = 'flex';
       promptStage.style.display = 'none';
 
-      if (currentTab === 'receipt_forensic_map') {
+      if (currentTab === 'opencut_forensic_map') {
+        imgEl.src = currentCase.images.opencut_forensic_map || currentCase.images.local_edit_map;
+        capEl.textContent = '左：同页字块横向互校 (绿框=同页原生字 / 红框=OpenCut无痕换字) | 中：潜空间 4x4/8x8 谐波与羽化边界热力图 | 右：同页 3x 像素级上下对比 (上: OpenCut改字与横线衰减 / 下: 同页未改原生字)';
+      } else if (currentTab === 'receipt_forensic_map') {
         imgEl.src = currentCase.images.receipt_forensic_map || currentCase.images.local_edit_map;
         capEl.textContent = '左：微信/支付凭证双列对齐轴 (青色左列基准轴 / 蓝色右列数值轴) 与同行水平基线标尺 | 右：PS贴字基线错位与坐标轴偏移 3 倍高清像素放大镜';
       } else if (currentTab === 'local_edit_map') {

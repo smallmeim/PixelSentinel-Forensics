@@ -34,6 +34,7 @@ from evaluate_sample import evaluate_image_end_to_end
 from human_ai_feedback_loop import add_human_observation, load_rules
 import sys
 from local_edit_detector import analyze_local_ai_edit
+from opencut_forensics import analyze_opencut_tampering
 from screenshot_receipt_forensics import analyze_transfer_receipt
 from universal_forensic_algorithm import run_universal_forensic_algorithm
 from vlm_api_client import (
@@ -111,12 +112,12 @@ PRESET_CASES = [
     },
     {
         "id": "opencut_edit",
-        "title": "专项 A：实验记录单局部 AI 改字 (FAIL → PASS)",
-        "subtitle": "局部 AI 改图 (OpenCut)：仅篡改 B201 行状态词，滑窗差分锁定 [816, 320, 928, 384]",
+        "title": "专项 A：OpenCut 同笔迹无痕改字 (FAIL → PASS)",
+        "subtitle": "OpenCut 双阶段擦除与同风格扩散改字：同页 59 个字块横向互校锁定 [806, 326, 894, 374] (Z=44.55σ)",
         "image_rel": "/files/examples/opencut_modified_note.jpg",
         "file_path": EXAMPLES_DIR / "opencut_modified_note.jpg",
         "eval_dir": OUTPUTS_DIR / "eval_opencut_edit",
-        "human_note": "AI 改图特征：局部将 FAIL 替换为 PASS 后，横线在重绘框左右边缘发生轻微截断，且框内存在 Z=9.06σ 的 2D VAE 网格周期与字体笔锋突变。",
+        "human_note": "OpenCut 无痕改字破局：肉眼看 PASS 与上下行 OK 具有完全相同的深蓝圆珠笔墨色与 2px 手写笔锋；但通过『同页字块横向互校 (Z=44.55σ) + 字下横格线 44% 衰减断层 + 4x4/8x8 潜空间谐波』精准锁定篡改框。",
     },
     {
         "id": "real_inpaint",
@@ -163,6 +164,14 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     else:
         receipt_stats = json.loads(receipt_json_file.read_text(encoding="utf-8"))
 
+    opencut_map_file = eval_dir / f"{stem}_opencut_forensic_map.jpg"
+    opencut_json_file = eval_dir / f"{stem}_opencut_forensic_stats.json"
+    if not opencut_map_file.exists() or not opencut_json_file.exists():
+        opencut_stats = analyze_opencut_tampering(image_path, eval_dir)
+        opencut_json_file.write_text(json.dumps(opencut_stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        opencut_stats = json.loads(opencut_json_file.read_text(encoding="utf-8"))
+
     deep_res = run_deep_framework_inspection(image_path)
     univ_res = run_universal_forensic_algorithm(image_path)
     prompt_md_file = eval_dir / f"{stem}_forensic_prompt.md"
@@ -171,7 +180,7 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     rel_dir = eval_dir.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
     img_rel = image_path.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
 
-    # Combine universal mathematical algorithm, deep framework confidence, signal prob, local edit, and receipt forensics
+    # Combine universal mathematical algorithm, deep framework confidence, signal prob, local edit, receipt & OpenCut forensics
     sig_prob = float(eval_summary.get("ai_forgery_probability", 0.5))
     fw_prob = float(deep_res.get("framework_forgery_confidence", 0.5))
     univ_prob = float(univ_res.get("universal_algo_forgery_score", 0.5))
@@ -179,10 +188,16 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     local_z = float(local_edit_stats.get("max_patch_zscore", 0.0))
     is_forged_receipt = bool(receipt_stats.get("is_forged_receipt", False))
     receipt_prob = float(receipt_stats.get("receipt_forgery_score", 0.0))
+    is_opencut = bool(opencut_stats.get("is_opencut_tampered", False))
+    opencut_z = float(opencut_stats.get("max_peer_zscore", 0.0))
 
     if is_forged_receipt and receipt_prob >= 0.60:
         combined_prob = round(max(receipt_prob, 0.96), 2)
         verdict_str = "微信/社交平台转账凭证 PS 或 AI 篡改伪造 (基线错位/坐标轴偏移/字体冲突)"
+    elif is_opencut and opencut_z >= 8.0:
+        combined_prob = 0.99
+        oc_bbox = opencut_stats.get("primary_opencut_token", {}).get("bbox", [0, 0, 0, 0])
+        verdict_str = f"OpenCut 局部无痕换字 / 同笔迹扩散篡改 (锁定字框 {oc_bbox}, 同页互校 Z={opencut_z}σ)"
     elif is_local_edit and local_z >= 8.0:
         combined_prob = round(min(0.99, max(0.92, 0.4 * univ_prob + 0.3 * fw_prob + 0.3 * sig_prob + 0.25)), 2)
         bbox = local_edit_stats.get("primary_edit_bbox", [0, 0, 0, 0])
@@ -197,8 +212,8 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     return {
         "id": case_meta["id"] if case_meta else stem,
         "title": case_meta["title"] if case_meta else f"自定义上传检测：{image_path.name}",
-        "subtitle": case_meta["subtitle"] if case_meta else "UMSF 通用数理晶格算法 + 微信/社交账单基线字体取证 + 局部 AI 改图差分诊断",
-        "human_note": case_meta.get("human_note", "") if case_meta else "无需依赖画面具体物体个例，直接由 UMSF 2x2晶格奇偶破缺、微信双列坐标轴/字体算子与局部差分热力图完成裁定。",
+        "subtitle": case_meta["subtitle"] if case_meta else "UMSF 通用数理晶格算法 + OpenCut同页字块互校 + 微信账单基线字体取证",
+        "human_note": case_meta.get("human_note", "") if case_meta else "无需依赖画面具体物体个例，直接由 UMSF 2x2晶格奇偶破缺、OpenCut同页横向互校与微信双列坐标轴算子完成裁定。",
         "combined_probability": combined_prob,
         "verdict": verdict_str,
         "images": {
@@ -207,8 +222,10 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
             "visual_prompt": f"/files/{rel_dir}/{stem}_visual_prompt.jpg",
             "local_edit_map": f"/files/{rel_dir}/{stem}_local_edit_map.jpg",
             "receipt_forensic_map": f"/files/{rel_dir}/{stem}_receipt_forensic_map.jpg",
+            "opencut_forensic_map": f"/files/{rel_dir}/{stem}_opencut_forensic_map.jpg",
         },
         "universal_algorithm": univ_res,
+        "opencut_analysis": opencut_stats,
         "receipt_analysis": receipt_stats,
         "signal_evaluation": eval_summary,
         "deep_framework": deep_res,
