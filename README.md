@@ -75,6 +75,7 @@ PixelSentinel-Forensics/
 │   └── related_works_matrix.md                                # 2024–2026 顶会开源仓库对标矩阵（Benchmark & SOTA）
 └── src/
     ├── web_app.py                                             # 🌐 PixelSentinel 独立取证程序后端服务
+    ├── universal_forensic_algorithm.py                        # 🧮 UMSF 通用非个例数理与晶格奇偶取证算法（NPR 2x2奇偶破缺 + GGD + 马尔可夫熵）
     ├── vlm_api_client.py                                      # 🔌 第三方多模态大模型 API 接入客户端（支持硅基流动/千问/智谱/GPT-4o/Gemini）
     ├── static/
     │   └── index.html                                         # 🌐 交互式前端界面（内置 API 接入配置栏、六大基准对比、3x局部篡改放大镜）

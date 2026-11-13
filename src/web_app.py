@@ -34,6 +34,7 @@ from evaluate_sample import evaluate_image_end_to_end
 from human_ai_feedback_loop import add_human_observation, load_rules
 import sys
 from local_edit_detector import analyze_local_ai_edit
+from universal_forensic_algorithm import run_universal_forensic_algorithm
 from vlm_api_client import (
     call_third_party_vlm_forensics,
     get_public_config,
@@ -145,34 +146,36 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
         local_edit_stats = json.loads(local_edit_json_file.read_text(encoding="utf-8"))
 
     deep_res = run_deep_framework_inspection(image_path)
+    univ_res = run_universal_forensic_algorithm(image_path)
     prompt_md_file = eval_dir / f"{stem}_forensic_prompt.md"
     prompt_text = prompt_md_file.read_text(encoding="utf-8") if prompt_md_file.exists() else ""
 
     rel_dir = eval_dir.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
     img_rel = image_path.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
 
-    # Combine signal probability, deep framework confidence, and localized AI edit detector
+    # Combine universal mathematical algorithm, deep framework confidence, signal prob, and local edit detector
     sig_prob = float(eval_summary.get("ai_forgery_probability", 0.5))
     fw_prob = float(deep_res.get("framework_forgery_confidence", 0.5))
+    univ_prob = float(univ_res.get("universal_algo_forgery_score", 0.5))
     is_local_edit = bool(local_edit_stats.get("is_localized_ai_edit", False))
     local_z = float(local_edit_stats.get("max_patch_zscore", 0.0))
 
     if is_local_edit and local_z >= 8.0:
-        combined_prob = round(min(0.99, max(0.92, 0.45 * sig_prob + 0.55 * fw_prob + 0.25)), 2)
+        combined_prob = round(min(0.99, max(0.92, 0.4 * univ_prob + 0.3 * fw_prob + 0.3 * sig_prob + 0.25)), 2)
         bbox = local_edit_stats.get("primary_edit_bbox", [0, 0, 0, 0])
         verdict_str = f"局部 AI 改图 / 涂抹重绘 (锁定篡改框 {bbox})"
-    elif fw_prob >= 0.45 or sig_prob >= 0.45:
-        combined_prob = round(min(0.99, max(fw_prob, 0.45 * sig_prob + 0.55 * fw_prob + 0.08)), 2)
-        verdict_str = "全图 AI 生成或伪造 (AI_FORGED)"
+    elif univ_prob >= 0.50 or fw_prob >= 0.45:
+        combined_prob = round(min(0.99, max(univ_prob, 0.50 * univ_prob + 0.30 * fw_prob + 0.20 * sig_prob)), 2)
+        verdict_str = "全图 AI 生成或伪造 (UMSF 通用数理算法裁定)"
     else:
-        combined_prob = round(0.45 * sig_prob + 0.55 * fw_prob, 2)
+        combined_prob = round(0.50 * univ_prob + 0.30 * fw_prob + 0.20 * sig_prob, 2)
         verdict_str = "真实未改原图 (LIKELY_AUTHENTIC)"
 
     return {
         "id": case_meta["id"] if case_meta else stem,
         "title": case_meta["title"] if case_meta else f"自定义上传检测：{image_path.name}",
-        "subtitle": case_meta["subtitle"] if case_meta else "实时多模态信号 + 底层物理框架 + 局部 AI 改图差分诊断",
-        "human_note": case_meta.get("human_note", "") if case_meta else "可结合下方「局部 AI 改图定位」与「Top-3 可疑框放大镜」进行人工复核。",
+        "subtitle": case_meta["subtitle"] if case_meta else "UMSF 通用数理晶格算法 + 底层物理框架 + 局部 AI 改图差分诊断",
+        "human_note": case_meta.get("human_note", "") if case_meta else "无需依赖画面具体物体个例，直接由 UMSF 2x2晶格奇偶破缺、GGD子带矩与局部差分热力图完成裁定。",
         "combined_probability": combined_prob,
         "verdict": verdict_str,
         "images": {
@@ -181,6 +184,7 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
             "visual_prompt": f"/files/{rel_dir}/{stem}_visual_prompt.jpg",
             "local_edit_map": f"/files/{rel_dir}/{stem}_local_edit_map.jpg",
         },
+        "universal_algorithm": univ_res,
         "signal_evaluation": eval_summary,
         "deep_framework": deep_res,
         "local_edit_analysis": local_edit_stats,

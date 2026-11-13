@@ -578,28 +578,34 @@
             💡 人类专家判别总结：--
           </div>
 
-          <div class="section-label">🔬 底层物理与生成框架指标 (Deep Framework Forensics)</div>
+          <div class="section-label">🔬 UMSF 通用非个例数理与晶格取证算子 (Content-Agnostic Laws)</div>
           <div class="metric-group">
             <div class="metric-row">
-              <span class="metric-label">1. Bayer 光学色散非对称度 (越低越像AI卷积直接输出)</span>
+              <span class="metric-label">1. NPR 2x2 晶格奇偶跨界比 (真图恒≈1.00，AI上采样相移≈0.88~0.93)</span>
+              <span class="metric-val" id="valJump2x2">--</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill" id="barJump2x2" style="width:50%"></div></div>
+
+            <div class="metric-row">
+              <span class="metric-label">2. Mallat 子带广义高斯矩 GGD (真图≈0.58~0.68，AI超稀疏&lt;0.50)</span>
+              <span class="metric-val" id="valGgd">--</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill" id="barGgd" style="width:50%"></div></div>
+
+            <div class="metric-row">
+              <span class="metric-label">3. Bayer 光学色散非对称度 (越低越像AI卷积直接输出)</span>
               <span class="metric-val" id="valBayer">--</span>
             </div>
             <div class="bar-bg"><div class="bar-fill" id="barBayer" style="width:50%"></div></div>
 
             <div class="metric-row">
-              <span class="metric-label">2. VAE 4x4/8x8 潜空间步长周期比 (越高越符合扩散解码)</span>
+              <span class="metric-label">4. 2D 频谱正交/对角各向异性 &amp; VAE 步长周期</span>
               <span class="metric-val" id="valVae">--</span>
             </div>
             <div class="bar-bg"><div class="bar-fill" id="barVae" style="width:50%"></div></div>
 
             <div class="metric-row">
-              <span class="metric-label">3. 传感器平坦区底噪分裂比 (CMOS 散粒噪声一致性)</span>
-              <span class="metric-val" id="valNoise">--</span>
-            </div>
-            <div class="bar-bg"><div class="bar-fill" id="barNoise" style="width:50%"></div></div>
-
-            <div class="metric-row">
-              <span class="metric-label">4. 局部 AI 改图差分峰值 Z-Score (滑窗定位篡改框)</span>
+              <span class="metric-label">5. 局部 AI 改图差分峰值 Z-Score (32x32 滑窗定位篡改框)</span>
               <span class="metric-val" id="valPeak">--</span>
             </div>
             <div class="bar-bg"><div class="bar-fill" id="barPeak" style="width:50%"></div></div>
@@ -850,20 +856,27 @@
 
       const df = caseData.deep_framework;
       const le = caseData.local_edit_analysis || {};
+      const ua = caseData.universal_algorithm || {};
       const bayerAsym = df.test3_rgb_highfreq_coupling.bayer_chromatic_asymmetry;
       const vaeRatio = df.test2_vae_stride_vs_bayer_cfa.vae_to_bayer_periodicity_ratio;
-      const noiseRatio = df.test1_sensor_noise_physics.noise_non_uniformity_ratio;
+      const jump2x2 = ua.lattice_npr_metrics?.lattice_jump_ratio_2x2 ?? 1.0;
+      const parityAsym = ua.lattice_npr_metrics?.lattice_parity_asymmetry_2x2 ?? 0.0;
+      const ggdRatio = ua.natural_scene_statistics?.ggd_subband_moment_ratio ?? 0.6;
+      const aniso = ua.natural_scene_statistics?.spectral_azimuthal_anisotropy ?? 1.3;
       const localZ = le.max_patch_zscore || 0.0;
       const editBbox = le.primary_edit_bbox ? `[${le.primary_edit_bbox.join(', ')}]` : '--';
 
+      document.getElementById('valJump2x2').textContent = `${jump2x2} (偏离度 ${(parityAsym * 100).toFixed(2)}%)`;
+      document.getElementById('barJump2x2').style.width = `${Math.min(100, Math.max(8, parityAsym * 750))}%`;
+
+      document.getElementById('valGgd').textContent = `${ggdRatio} (真图基准 ≈ 0.59)`;
+      document.getElementById('barGgd').style.width = `${Math.min(100, Math.max(8, (0.65 - ggdRatio) / 0.30 * 100))}%`;
+
       document.getElementById('valBayer').textContent = `${bayerAsym} (真图基准 ≈ 0.042)`;
-      document.getElementById('barBayer').style.width = `${Math.min(100, Math.max(12, (0.045 - bayerAsym) / 0.045 * 100))}%`;
+      document.getElementById('barBayer').style.width = `${Math.min(100, Math.max(8, (0.045 - bayerAsym) / 0.045 * 100))}%`;
 
-      document.getElementById('valVae').textContent = `${vaeRatio}x`;
-      document.getElementById('barVae').style.width = `${Math.min(100, vaeRatio * 55)}%`;
-
-      document.getElementById('valNoise').textContent = `${noiseRatio}x`;
-      document.getElementById('barNoise').style.width = `${Math.min(100, noiseRatio * 12)}%`;
+      document.getElementById('valVae').textContent = `Aniso=${aniso} | VAE=${vaeRatio}x`;
+      document.getElementById('barVae').style.width = `${Math.min(100, Math.max(10, Math.abs(aniso - 1.35) * 45 + vaeRatio * 20))}%`;
 
       document.getElementById('valPeak').textContent = `Z = ${localZ}σ | 框 ${editBbox}`;
       document.getElementById('barPeak').style.width = `${Math.min(100, localZ * 6)}%`;
@@ -873,6 +886,7 @@
         : [];
       const evList = [
         ...localFlag,
+        ...(ua.universal_mathematical_proofs || []),
         ...(df.underlying_framework_flags || []),
         ...(caseData.signal_evaluation.automated_evidence_chain || []),
       ];
