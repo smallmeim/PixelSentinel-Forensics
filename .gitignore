@@ -11,6 +11,7 @@ env/
 # Outputs and temporary artifacts
 outputs/
 report_out/
+data/cn_homework_dataset/
 *.pt
 *.pth
 *.ckpt
