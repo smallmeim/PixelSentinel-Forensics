@@ -63,14 +63,23 @@ flowchart TD
 PixelSentinel-Forensics/
 ├── README.md                                                  # 项目总览与研究导航
 ├── requirements.txt                                           # 依赖包配置
+├── data/
+│   └── human_forensic_rules.json                              # ⭐ 人机协同沉淀的五大人工取证专家规则库 (HUMAN-RULE-001~005)
+├── examples/                                                  # 四级伪造难度演进基准测试图集 (MJ5 / 手写单 / 便利贴 / 无文字角落)
 ├── docs/
-│   ├── forensic_prompt_engineering_and_sota_training.md       # ⭐ 核心：让AI注意到微观破绽的专用提示词库 + 顶会低算力训练方案调研
+│   ├── forensic_prompt_engineering_and_sota_training.md       # ⭐ 让AI注意到微观破绽的专用提示词库 + 顶会低算力训练方案调研
 │   ├── opencut_and_text_tampering_forensics.md                # 深度调研：OpenCut 手写字篡改机理与五维鉴别法
 │   ├── detector_bias_and_rdd_debiasing.md                     # 理论与实验：AI 检测器背景复杂度偏差诊断与去偏方案
 │   └── related_works_matrix.md                                # 2024–2026 顶会开源仓库对标矩阵（Benchmark & SOTA）
 └── src/
-    ├── forensic_prompt_pipeline.py                            # ⭐ 免训练：自动生成「视觉提示拼图 + 定量信号注入取证 Prompt」
+    ├── web_app.py                                             # 🌐 PixelSentinel AI 图像鉴别与取证网站后端 (一键启动 Web 平台)
+    ├── static/
+    │   └── index.html                                         # 🌐 交互式 Web 前端界面（支持拖拽上传、四级基准对比、2x放大镜与规则库）
+    ├── deep_framework_forensics.py                            # 🔬 图片底层物理与生成框架检测（Bayer色散非对称度 + VAE 8x8步长周期）
+    ├── evaluate_sample.py                                     # 端到端多模态信号 + 去偏评估器
+    ├── forensic_prompt_pipeline.py                            # 免训练：自动生成「视觉提示拼图 + 定量信号注入取证 Prompt」
     ├── forensics_toolkit.py                                   # 多维图像取证与去偏诊断工具（输出六合一热力图报告）
+    ├── human_ai_feedback_loop.py                              # 人机协同取证规则沉淀器
     ├── models/
     │   └── clip_forensic_classifier.py                        # 冻结CLIP-ViT + Top-K局部块异常池化 + SRM侧信道轻量级模型定义
     └── data/
@@ -79,7 +88,32 @@ PixelSentinel-Forensics/
 
 ---
 
-## 🚀 五、快速开始（多维取证诊断工具）
+## 🧠 四（补充）、人机协同沉淀的「五级 AI 伪造鉴别体系」（Human-in-the-Loop Rules）
+
+通过多轮真实案例的人机协同对抗实测，我们将 AI 伪造痕迹归纳为**「表观语义拓扑 + 底层物理框架」双层五级鉴别法则**（已内置于 [`data/human_forensic_rules.json`](data/human_forensic_rules.json) 与 Web 平台）：
+
+| 规则编号 | 维度名称 | 人工与算法联合判别要诀 | 对应典型场景 |
+| :--- | :--- | :--- | :--- |
+| **HUMAN-RULE-001** | **宏观雕刻感纹路** | 人物皮肤皱纹、织物、毛发呈现过度锐化雕刻感与局部油画般平滑涂抹并存的伪影。 | 早期 Midjourney / SD 肖像与风景 |
+| **HUMAN-RULE-002** | **手写字「印刷体化」** | 背景桌面/纸张极真，但手写字母数字（如多个 `OK`、`3`、`1`）同字同形、等宽等高、笔画无顿笔压感方差，呈「电脑手写字库」质感。 | AI 伪造手写实验单、收据、OpenCut 改字 |
+| **HUMAN-RULE-003** | **拍摄动机与光学景深悖论** | 现实中手机拍记录/日常物多为平视或正拍且小底景深很深；AI 倾向于采用斜切微距视角、刻意堆砌背景道具（杯子/外设）并伴随单反级大光圈虚化。 | 高拟真桌面摆拍、微距静物伪造 |
+| **HUMAN-RULE-004** | **次级场景小字/车牌乱码** | 主招牌大字（如「停车位」「超市」）已能写对，但放大车牌前缀汉字、挡泥板小字、告示牌副标题时，笔画退化为似字非字的序列乱码。 | 城市街景、门店招牌、路牌随手拍 |
+| **HUMAN-RULE-005** | **一维细长物体拓扑断裂 + 底层框架兜底** | 无文字图中，顺着电线/数据线/鞋带追踪可发现「两头合并消失」「有头无尾死循环」；若表观无失误，直接由底层 **Bayer 色散非对称度 (`<0.015`)** 与 **VAE `8×8` 步长自相关** 一票否决。 | 全图无文字日常角落、高阶变色龙级伪造 |
+
+---
+
+## 🌐 五、快速启动 AI 图像鉴别网站（Web 平台）与命令行工具
+
+### 1. 一键启动交互式 AI 图像鉴别网站（推荐，零额外依赖）
+
+```bash
+# 启动本地 Web 取证平台（默认端口 8088）
+D:\aigi\venv\Scripts\python.exe src/web_app.py --port 8088
+```
+打开浏览器访问 `http://127.0.0.1:8088`，即可体验：
+- **任意图片上传实时鉴别**（自动输出综合伪造置信度、六合一信号热力图、Top-3 可疑框与 2x 像素放大镜）；
+- **底层物理框架仪表盘**（实时展示 Bayer CFA 光学色散非对称度、VAE `4×4 / 8×8` 潜空间周期比、传感器底噪分裂比、RDD 去偏得分）；
+- **四级伪造演进基准案例一键切换**与**专家取证 Prompt 一键复制**。
 
 `src/forensics_toolkit.py` 提供了开箱即用的多维图像取证脚本，无需重训大模型即可对任意待检图片（实拍图、AIGC 合成图、OpenCut 局部改字图）生成**六合一可视化诊断报告**：
 

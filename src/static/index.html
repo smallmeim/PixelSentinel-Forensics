@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PixelSentinel | AI 图像真伪与局部篡改多维取证平台</title>
+  <style>
+    :root {
+      --bg-deep: #070c1a;
+      --bg-card: #0f172a;
+      --bg-elevated: #1e293b;
+      --border-subtle: rgba(58, 134, 255, 0.22);
+      --cyan: #00f5d4;
+      --blue: #3a86ff;
+      --danger: #ff4d6d;
+      --warn: #ffb703;
+      --ok: #06d6a0;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(circle at 15% 15%, #111d3b 0%, var(--bg-deep) 65%);
+      color: var(--text-main);
+      min-height: 100vh;
+      line-height: 1.55;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border-subtle);
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .shield-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(0, 245, 212, 0.2), rgba(58, 134, 255, 0.25));
+      border: 1.5px solid var(--cyan);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: var(--cyan);
+      font-size: 18px;
+      box-shadow: 0 0 15px rgba(0, 245, 212, 0.25);
+    }
+
+    .brand h1 {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      background: linear-gradient(90deg, #ffffff, var(--cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .upload-btn {
+      background: linear-gradient(135deg, var(--cyan), var(--blue));
+      color: #061024;
+      font-weight: 700;
+      font-size: 13.5px;
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .upload-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(0, 245, 212, 0.35);
+    }
+
+    .container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 22px 26px 48px;
+    }
+
+    /* Preset Case Bar */
+    .preset-section {
+      margin-bottom: 22px;
+    }
+
+    .section-label {
+      font-size: 12.5px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--cyan);
+      margin-bottom: 10px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .preset-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 12px;
+    }
+
+    .preset-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .preset-card:hover, .preset-card.active {
+      border-color: var(--cyan);
+      background: rgba(0, 245, 212, 0.07);
+      box-shadow: 0 4px 18px rgba(0, 245, 212, 0.14);
+    }
+
+    .preset-thumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 7px;
+      object-fit: cover;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      flex-shrink: 0;
+    }
+
+    .preset-info h3 {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 3px;
+    }
+
+    .preset-info p {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Main Workspace Grid */
+    .workspace {
+      display: grid;
+      grid-template-columns: 430px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 1080px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 18px;
+    }
+
+    .verdict-box {
+      border-radius: 10px;
+      padding: 15px 16px;
+      background: linear-gradient(135deg, rgba(255, 77, 109, 0.14), rgba(58, 134, 255, 0.1));
+      border: 1px solid rgba(255, 77, 109, 0.45);
+      margin-bottom: 16px;
+    }
+
+    .verdict-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .verdict-tag {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--danger);
+    }
+
+    .prob-pill {
+      background: var(--danger);
+      color: #fff;
+      font-weight: 800;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    .human-insight-banner {
+      background: rgba(0, 245, 212, 0.08);
+      border-left: 3.5px solid var(--cyan);
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      color: #e2e8f0;
+      margin-bottom: 16px;
+    }
+
+    .metric-group {
+      margin-bottom: 14px;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      margin-bottom: 5px;
+    }
+
+    .metric-label {
+      color: var(--text-muted);
+    }
+
+    .metric-val {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      color: var(--cyan);
+      font-weight: 600;
+    }
+
+    .bar-bg {
+      height: 7px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 11px;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--cyan));
+      border-radius: 4px;
+      transition: width 0.35s ease;
+    }
+
+    .evidence-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .evidence-item {
+      background: var(--bg-elevated);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 8px;
+      padding: 9px 11px;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    .evidence-item strong {
+      color: var(--warn);
+    }
+
+    /* Right Visual Tabs */
+    .tabs-header {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      border: 1px solid transparent;
+      padding: 8px 15px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tab-btn.active {
+      background: rgba(0, 245, 212, 0.14);
+      color: var(--cyan);
+      border-color: var(--cyan);
+    }
+
+    .visual-stage {
+      background: #050914;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px;
+      text-align: center;
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .visual-stage img {
+      max-width: 100%;
+      max-height: 640px;
+      border-radius: 6px;
+      object-fit: contain;
+    }
+
+    .visual-caption {
+      margin-top: 10px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+
+    .prompt-area {
+      width: 100%;
+      min-height: 360px;
+      background: #060b16;
+      color: #cbd5e1;
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 14px;
+      font-family: Consolas, monospace;
+      font-size: 12.5px;
+      line-height: 1.5;
+      resize: vertical;
+    }
+
+    .rules-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .rule-card {
+      background: var(--bg-elevated);
+      border: 1px solid rgba(0, 245, 212, 0.22);
+      border-radius: 9px;
+      padding: 12px 14px;
+    }
+
+    .rule-card .rule-id {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--cyan);
+      letter-spacing: 0.6px;
+    }
+
+    .rule-card h4 {
+      font-size: 13.5px;
+      margin: 4px 0 6px;
+      color: #fff;
+    }
+
+    .rule-card p {
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+
+    .rule-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .rule-form input, .rule-form textarea {
+      background: #060b16;
+      border: 1px solid var(--border-subtle);
+      color: #fff;
+      padding: 8px 11px;
+      border-radius: 6px;
+      font-size: 12.5px;
+      width: 100%;
+    }
+
+    .rule-form .full {
+      grid-column: 1 / -1;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="shield-icon">PS</div>
+      <div>
+        <h1>PixelSentinel AI 图像伪造与篡改取证平台</h1>
+        <p>多维信号显影 · 旋转/低通参照去偏 (RDD) · 底层物理框架 (Bayer/VAE) · 人机协同规则库</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <input type="file" id="fileInput" accept="image/*" style="display:none" />
+      <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+        <span>📤 上传任意待检图片 (支持实拍 / AIGC / OpenCut改字)</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="preset-section">
+      <div class="section-label">
+        <span>🎯 四级伪造难度演进基准库（点击切换查看「模型底层诊断 vs 人类专家判别」）</span>
+        <span id="statusText" style="color:var(--text-muted)">就绪</span>
+      </div>
+      <div class="preset-grid" id="presetGrid"></div>
+    </div>
+
+    <div class="workspace">
+      <!-- Left Column: Verdict, Deep Framework Gauges & Evidence Chain -->
+      <div>
+        <div class="panel">
+          <div class="verdict-box" id="verdictBox">
+            <div class="verdict-header">
+              <span class="verdict-tag" id="verdictTitle">加载中...</span>
+              <span class="prob-pill" id="probPill">--%</span>
+            </div>
+            <div style="font-size:12px; color:#cbd5e1;" id="complexityBadge">背景复杂度分级：--</div>
+          </div>
+
+          <div class="human-insight-banner" id="humanBanner">
+            💡 人类专家判别总结：--
+          </div>
+
+          <div class="section-label">🔬 底层物理与生成框架指标 (Deep Framework Forensics)</div>
+          <div class="metric-group">
+            <div class="metric-row">
+              <span class="metric-label">1. Bayer 光学色散非对称度 (越低越像AI卷积直接输出)</span>
+              <span class="metric-val" id="valBayer">--</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill" id="barBayer" style="width:50%"></div></div>
+
+            <div class="metric-row">
+              <span class="metric-label">2. VAE 4x4/8x8 潜空间步长周期比 (越高越符合扩散解码)</span>
+              <span class="metric-val" id="valVae">--</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill" id="barVae" style="width:50%"></div></div>
+
+            <div class="metric-row">
+              <span class="metric-label">3. 传感器平坦区底噪分裂比 (CMOS 散粒噪声一致性)</span>
+              <span class="metric-val" id="valNoise">--</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill" id="barNoise" style="width:50%"></div></div>
+
+            <div class="metric-row">
+              <span class="metric-label">4. 局部块去偏重建异常峰值倍率 (RDD Patch Peak)</span>
+              <span class="metric-val" id="valPeak">--</span>
+            </div>
+            <div class="bar-bg"><div class="bar-fill" id="barPeak" style="width:50%"></div></div>
+          </div>
+
+          <div class="section-label" style="margin-top:16px;">⚡ 自动触发的底层与信号证据链</div>
+          <ul class="evidence-list" id="evidenceList"></ul>
+        </div>
+      </div>
+
+      <!-- Right Column: Visual Stage & Human Rules -->
+      <div>
+        <div class="panel">
+          <div class="tabs-header">
+            <button class="tab-btn active" onclick="switchTab('visual_prompt', this)">
+              🔍 1. Top-3 可疑框与 2x 局部放大镜 (Visual Prompt)
+            </button>
+            <button class="tab-btn" onclick="switchTab('six_panel', this)">
+              📊 2. 六合一多模态信号热力图 (ELA / SRM / RDD)
+            </button>
+            <button class="tab-btn" onclick="switchTab('original', this)">
+              🖼️ 3. 原始待检图 (1:1 审阅)
+            </button>
+            <button class="tab-btn" onclick="switchTab('prompt_md', this)">
+              🤖 4. 注入定量信号的专用取证 Prompt (一键复制)
+            </button>
+          </div>
+
+          <div id="imageStageContainer" class="visual-stage">
+            <img id="mainVisualImg" src="" alt="Forensic Visualization" />
+            <p class="visual-caption" id="visualCaption">
+              左：Top-3 算法锁定可疑框 | 中：SRM 高频传感器噪声残差显影 | 右：#1 头号可疑区 2 倍像素放大与笔画边缘梯度
+            </p>
+          </div>
+
+          <div id="promptStageContainer" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-size:12.5px; color:var(--cyan);">
+                已自动注入该图的复杂度等级、SRM异常坐标与全部人类专家规则（可直接粘贴给 GPT-4o / Qwen-VL / Gemini）：
+              </span>
+              <button class="upload-btn" style="padding:5px 12px; font-size:12px;" onclick="copyPromptText()">
+                📋 复制取证提示词
+              </button>
+            </div>
+            <textarea id="promptTextarea" class="prompt-area" readonly></textarea>
+          </div>
+        </div>
+
+        <!-- Human-in-the-loop Rule Base Panel -->
+        <div class="panel">
+          <div class="section-label">
+            <span>🧠 人机协同沉淀的「五大人工取证法则」 (Human-in-the-Loop Rules)</span>
+            <span style="font-size:11.5px; color:var(--text-muted)">实时编译进取证 Prompt</span>
+          </div>
+          <div class="rules-grid" id="rulesGrid"></div>
+
+          <div class="rule-form">
+            <input type="text" id="newRuleCategory" placeholder="新规则分类 (例：光影反射 / 局部文字透视)" />
+            <input type="text" id="newRuleObservation" placeholder="你是怎么看出这张图是AI做的？(人工观察)" />
+            <input type="text" id="newRulePrompt" class="full" placeholder="转化为给AI的检查指令 (例：检查水面/镜面反射是否与物体姿态一一对应)" />
+            <div class="full" style="text-align:right;">
+              <button class="upload-btn" onclick="submitNewRule()">➕ 沉淀为新取证规则并写入仓库</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allPresets = [];
+    let currentCase = null;
+    let currentTab = 'visual_prompt';
+
+    async function initApp() {
+      const res = await fetch('/api/presets');
+      const data = await res.json();
+      allPresets = data.presets || [];
+      renderPresets();
+      renderRules(data.human_rules || []);
+      if (allPresets.length > 0) {
+        selectCase(allPresets[allPresets.length - 1], allPresets.length - 1);
+      }
+    }
+
+    function renderPresets() {
+      const grid = document.getElementById('presetGrid');
+      grid.innerHTML = allPresets.map((c, idx) => `
+        <div class="preset-card" id="presetCard_${idx}" onclick="selectCaseByIdx(${idx})">
+          <img class="preset-thumb" src="${c.images.original}" alt="${c.title}" />
+          <div class="preset-info">
+            <h3>${c.title}</h3>
+            <p>${c.subtitle}</p>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function selectCaseByIdx(idx) {
+      selectCase(allPresets[idx], idx);
+    }
+
+    function selectCase(caseData, activeIdx = -1) {
+      currentCase = caseData;
+      document.querySelectorAll('.preset-card').forEach((el, i) => {
+        el.classList.toggle('active', i === activeIdx);
+      });
+
+      document.getElementById('verdictTitle').textContent = caseData.verdict;
+      document.getElementById('probPill').textContent = `伪造置信度 ${Math.round(caseData.combined_probability * 100)}%`;
+      document.getElementById('complexityBadge').textContent =
+        `背景复杂度分级：${caseData.signal_evaluation.complexity_tier} | RDD 去偏校准分：${caseData.signal_evaluation.debiased_rdd_score}`;
+      document.getElementById('humanBanner').textContent = `💡 人工判别要诀：${caseData.human_note}`;
+
+      const df = caseData.deep_framework;
+      const bayerAsym = df.test3_rgb_highfreq_coupling.bayer_chromatic_asymmetry;
+      const vaeRatio = df.test2_vae_stride_vs_bayer_cfa.vae_to_bayer_periodicity_ratio;
+      const noiseRatio = df.test1_sensor_noise_physics.noise_non_uniformity_ratio;
+      const peakRatio = caseData.signal_evaluation.top_suspicious_boxes?.[0]?.srm_noise_deviation_ratio || 1.0;
+
+      document.getElementById('valBayer').textContent = `${bayerAsym} (真图基准 ≈ 0.042)`;
+      document.getElementById('barBayer').style.width = `${Math.min(100, Math.max(12, (0.045 - bayerAsym) / 0.045 * 100))}%`;
+
+      document.getElementById('valVae').textContent = `${vaeRatio}x`;
+      document.getElementById('barVae').style.width = `${Math.min(100, vaeRatio * 55)}%`;
+
+      document.getElementById('valNoise').textContent = `${noiseRatio}x`;
+      document.getElementById('barNoise').style.width = `${Math.min(100, noiseRatio * 12)}%`;
+
+      document.getElementById('valPeak').textContent = `${peakRatio}x (Top-1 框偏离度)`;
+      document.getElementById('barPeak').style.width = `${Math.min(100, peakRatio * 10)}%`;
+
+      const evList = [
+        ...(df.underlying_framework_flags || []),
+        ...(caseData.signal_evaluation.automated_evidence_chain || []),
+      ];
+      document.getElementById('evidenceList').innerHTML = evList.map(item => {
+        const parts = item.split(':');
+        return `<li class="evidence-item"><strong>${parts[0]}:</strong>${parts.slice(1).join(':')}</li>`;
+      }).join('');
+
+      document.getElementById('promptTextarea').value = caseData.forensic_prompt_markdown || '';
+      updateVisualStage();
+    }
+
+    function switchTab(tabKey, btnEl) {
+      currentTab = tabKey;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      if (btnEl) btnEl.classList.add('active');
+      updateVisualStage();
+    }
+
+    function updateVisualStage() {
+      if (!currentCase) return;
+      const imgStage = document.getElementById('imageStageContainer');
+      const promptStage = document.getElementById('promptStageContainer');
+      const imgEl = document.getElementById('mainVisualImg');
+      const capEl = document.getElementById('visualCaption');
+
+      if (currentTab === 'prompt_md') {
+        imgStage.style.display = 'none';
+        promptStage.style.display = 'block';
+        return;
+      }
+
+      imgStage.style.display = 'flex';
+      promptStage.style.display = 'none';
+
+      if (currentTab === 'visual_prompt') {
+        imgEl.src = currentCase.images.visual_prompt;
+        capEl.textContent = '左：Top-3 算法锁定可疑框 | 中：SRM 高频传感器噪声残差显影 | 右：#1 头号可疑区 2 倍像素放大与边缘微梯度';
+      } else if (currentTab === 'six_panel') {
+        imgEl.src = currentCase.images.six_panel;
+        capEl.textContent = '六合一诊断：1.原图 2.ELA重压缩残差 3.SRM高频噪声(OpenCut检测) 4.笔画微梯度 5.背景复杂度分层 6.RDD旋转/低通去偏异常图';
+      } else {
+        imgEl.src = currentCase.images.original;
+        capEl.textContent = '原始待检图像（可结合左侧证据链与人类专家五大法则审阅细节）';
+      }
+    }
+
+    function renderRules(rules) {
+      const grid = document.getElementById('rulesGrid');
+      grid.innerHTML = rules.map(r => `
+        <div class="rule-card">
+          <div class="rule-id">${r.rule_id}</div>
+          <h4>${r.category}</h4>
+          <p><strong>人工发现：</strong>${r.human_observation}</p>
+        </div>
+      `).join('');
+    }
+
+    function copyPromptText() {
+      const ta = document.getElementById('promptTextarea');
+      ta.select();
+      navigator.clipboard.writeText(ta.value);
+      document.getElementById('statusText').textContent = '✅ 已复制取证 Prompt 到剪贴板！';
+    }
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      document.getElementById('statusText').textContent = `⏳ 正在对 ${file.name} 进行底层框架与多模态信号分析...`;
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, image_base64: reader.result })
+        });
+        const data = await res.json();
+        if (data.result) {
+          allPresets.push(data.result);
+          renderPresets();
+          selectCase(data.result, allPresets.length - 1);
+          document.getElementById('statusText').textContent = `✅ ${file.name} 分析完成！`;
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    async function submitNewRule() {
+      const cat = document.getElementById('newRuleCategory').value.trim();
+      const obs = document.getElementById('newRuleObservation').value.trim();
+      const prm = document.getElementById('newRulePrompt').value.trim();
+      if (!obs || !prm) {
+        alert('请填写人工观察描述和转化后的检查指令！');
+        return;
+      }
+      const res = await fetch('/api/add_rule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_name: currentCase ? currentCase.id : 'web_ui',
+          category: cat || 'Human Forensic Clue',
+          observation: obs,
+          prompt_rule: prm
+        })
+      });
+      const data = await res.json();
+      if (data.all_rules) {
+        renderRules(data.all_rules);
+        document.getElementById('newRuleCategory').value = '';
+        document.getElementById('newRuleObservation').value = '';
+        document.getElementById('newRulePrompt').value = '';
+        document.getElementById('statusText').textContent = `✅ 新规则 ${data.rule.rule_id} 已写入仓库！`;
+      }
+    }
+
+    initApp();
+  </script>
+</body>
+</html>
