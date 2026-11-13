@@ -421,6 +421,64 @@
     .rule-form .full {
       grid-column: 1 / -1;
     }
+
+    /* API Config Bar */
+    .api-bar {
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+      border: 1px solid rgba(0, 245, 212, 0.35);
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    }
+
+    .api-bar-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .api-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 1.5fr 1.3fr 1.2fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    @media (max-width: 1100px) {
+      .api-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .api-input, .api-select {
+      background: #050a14;
+      border: 1px solid var(--border-subtle);
+      color: #fff;
+      padding: 8px 11px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      width: 100%;
+    }
+
+    .api-status-pill {
+      font-size: 11.5px;
+      padding: 3px 10px;
+      border-radius: 14px;
+      font-weight: 700;
+    }
+
+    .vlm-report-box {
+      background: linear-gradient(135deg, rgba(0, 245, 212, 0.09), rgba(58, 134, 255, 0.12));
+      border: 1px solid var(--cyan);
+      border-radius: 10px;
+      padding: 13px 15px;
+      margin-bottom: 16px;
+      font-size: 12.5px;
+    }
   </style>
 </head>
 <body>
@@ -428,22 +486,67 @@
     <div class="brand">
       <div class="shield-icon">PS</div>
       <div>
-        <h1>PixelSentinel AI 图像伪造与篡改取证平台</h1>
-        <p>多维信号显影 · 旋转/低通参照去偏 (RDD) · 底层物理框架 (Bayer/VAE) · 人机协同规则库</p>
+        <h1>PixelSentinel AI 图像伪造与篡改取证程序</h1>
+        <p>本地底层物理信号 (Bayer/VAE/滑窗差分) + 第三方多模态大模型 API 联合裁定系统</p>
       </div>
     </div>
     <div class="header-actions">
+      <button class="upload-btn" style="background:linear-gradient(135deg,#ffb703,#fb8500); color:#071021;" onclick="triggerVlmJudgeNow()">
+        <span>🤖 调用第三方 API 深度鉴别当前图</span>
+      </button>
       <input type="file" id="fileInput" accept="image/*" style="display:none" />
       <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
-        <span>📤 上传任意待检图片 (支持实拍 / AIGC / OpenCut改字)</span>
+        <span>📤 上传待检图片 (自动物理预检 + API 鉴别)</span>
       </button>
     </div>
   </header>
 
   <div class="container">
+    <!-- Third-Party VLM API Plug-and-Play Configuration Bar -->
+    <div class="api-bar">
+      <div class="api-bar-top">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span style="font-size:13.5px; font-weight:700; color:var(--cyan);">
+            🔌 第三方多模态大模型 API 接入配置（即插即用：自动向 API 注入原图 + 局部3x放大热力图 + 六大物理取证提示词）
+          </span>
+          <span id="apiKeyBadge" class="api-status-pill" style="background:rgba(255,183,3,0.2); color:var(--warn);">
+            未配置 Key (仅运行本地物理引擎)
+          </span>
+        </div>
+        <label style="font-size:12px; color:#cbd5e1; display:flex; align-items:center; gap:6px; cursor:pointer;">
+          <input type="checkbox" id="autoCallToggle" checked />
+          上传新图片时自动调用第三方 API 联合裁定
+        </label>
+      </div>
+
+      <div class="api-grid">
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:3px;">1. 选择 API 服务商预设</div>
+          <select id="providerSelect" class="api-select" onchange="onProviderChange()"></select>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:3px;">2. 接口地址 (API Base URL)</div>
+          <input type="text" id="apiBaseUrl" class="api-input" placeholder="https://api.siliconflow.cn/v1" />
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:3px;">3. 第三方 API Key (本地加密保存，不上传仓库)</div>
+          <input type="password" id="apiKeyInput" class="api-input" placeholder="输入 sk-... 或 AIzaSy..." />
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-muted); margin-bottom:3px;">4. 视觉模型名称 (Model ID)</div>
+          <input type="text" id="apiModelInput" class="api-input" placeholder="Qwen/Qwen2.5-VL-72B-Instruct" />
+        </div>
+        <div style="padding-top:16px; display:flex; gap:8px;">
+          <button class="upload-btn" style="padding:8px 14px; font-size:12.5px;" onclick="saveApiConfig()">
+            💾 保存配置
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="preset-section">
       <div class="section-label">
-        <span>🎯 四级伪造难度演进基准库（点击切换查看「模型底层诊断 vs 人类专家判别」）</span>
+        <span>🎯 六大伪造与局部改图基准库（点击切换查看「本地底层物理诊断 + 第三方 API 裁定」）</span>
         <span id="statusText" style="color:var(--text-muted)">就绪</span>
       </div>
       <div class="preset-grid" id="presetGrid"></div>
@@ -459,6 +562,16 @@
               <span class="prob-pill" id="probPill">--%</span>
             </div>
             <div style="font-size:12px; color:#cbd5e1;" id="complexityBadge">背景复杂度分级：--</div>
+          </div>
+
+          <div class="vlm-report-box" id="vlmReportBox" style="display:none;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <strong style="color:var(--cyan); font-size:13px;" id="vlmModelTitle">🤖 第三方大模型 API 裁定报告</strong>
+              <span id="vlmConfBadge" style="background:var(--cyan); color:#051020; font-weight:800; padding:2px 8px; border-radius:10px; font-size:11.5px;">--</span>
+            </div>
+            <div id="vlmRegionDesc" style="color:var(--warn); font-weight:600; margin-bottom:6px;"></div>
+            <div id="vlmReasoning" style="color:#e2e8f0; font-size:12px; margin-bottom:6px;"></div>
+            <ul id="vlmCluesList" style="padding-left:16px; color:#cbd5e1; font-size:11.5px;"></ul>
           </div>
 
           <div class="human-insight-banner" id="humanBanner">
@@ -563,6 +676,7 @@
     let allPresets = [];
     let currentCase = null;
     let currentTab = 'local_edit_map';
+    let providerPresets = [];
 
     async function initApp() {
       const res = await fetch('/api/presets');
@@ -570,9 +684,127 @@
       allPresets = data.presets || [];
       renderPresets();
       renderRules(data.human_rules || []);
+      if (data.api_config) {
+        initApiConfigBar(data.api_config);
+      }
       if (allPresets.length > 0) {
         selectCase(allPresets[allPresets.length - 1], allPresets.length - 1);
       }
+    }
+
+    function initApiConfigBar(cfg) {
+      providerPresets = cfg.presets || [];
+      const sel = document.getElementById('providerSelect');
+      sel.innerHTML = providerPresets.map(p =>
+        `<option value="${p.id}" ${p.id === cfg.provider_id ? 'selected' : ''}>${p.name}</option>`
+      ).join('');
+      document.getElementById('apiBaseUrl').value = cfg.base_url || '';
+      document.getElementById('apiModelInput').value = cfg.model || '';
+      document.getElementById('autoCallToggle').checked = cfg.auto_call_on_upload !== false;
+      updateApiBadge(cfg);
+    }
+
+    function updateApiBadge(cfg) {
+      const badge = document.getElementById('apiKeyBadge');
+      const keyInput = document.getElementById('apiKeyInput');
+      if (cfg.has_api_key) {
+        badge.textContent = `✅ 已接入 API Key (${cfg.api_key_masked}) · 模型: ${cfg.model}`;
+        badge.style.background = 'rgba(6, 214, 160, 0.2)';
+        badge.style.color = 'var(--ok)';
+        keyInput.placeholder = `已保存 (${cfg.api_key_masked})，留空保持不变`;
+      } else {
+        badge.textContent = '⚠️ 未配置 Key (填入 Key 保存后即可自动调用大模型鉴别)';
+        badge.style.background = 'rgba(255, 183, 3, 0.2)';
+        badge.style.color = 'var(--warn)';
+      }
+    }
+
+    function onProviderChange() {
+      const pid = document.getElementById('providerSelect').value;
+      const found = providerPresets.find(p => p.id === pid);
+      if (found) {
+        document.getElementById('apiBaseUrl').value = found.base_url;
+        document.getElementById('apiModelInput').value = found.default_model;
+        document.getElementById('apiKeyInput').placeholder = found.placeholder_key || 'sk-...';
+      }
+    }
+
+    async function saveApiConfig() {
+      const pid = document.getElementById('providerSelect').value;
+      const found = providerPresets.find(p => p.id === pid);
+      const payload = {
+        provider_id: pid,
+        protocol: found ? found.protocol : 'openai',
+        base_url: document.getElementById('apiBaseUrl').value.trim(),
+        api_key: document.getElementById('apiKeyInput').value.trim(),
+        model: document.getElementById('apiModelInput').value.trim(),
+        auto_call_on_upload: document.getElementById('autoCallToggle').checked,
+      };
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.api_config) {
+        document.getElementById('apiKeyInput').value = '';
+        updateApiBadge(data.api_config);
+        document.getElementById('statusText').textContent = '✅ 第三方 API 配置已保存到本地 config/api_config.json！';
+      }
+    }
+
+    async function triggerVlmJudgeNow() {
+      if (!currentCase) return;
+      const pid = document.getElementById('providerSelect').value;
+      const found = providerPresets.find(p => p.id === pid);
+      const override = {
+        provider_id: pid,
+        protocol: found ? found.protocol : 'openai',
+        base_url: document.getElementById('apiBaseUrl').value.trim(),
+        api_key: document.getElementById('apiKeyInput').value.trim(),
+        model: document.getElementById('apiModelInput').value.trim(),
+      };
+      document.getElementById('statusText').textContent = `⏳ 正在将原图 + 3x局部放大图 + 物理信号发送至第三方 API (${override.model})...`;
+      const res = await fetch('/api/vlm_judge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ case_data: currentCase, api_override: override }),
+      });
+      const data = await res.json();
+      if (data.vlm_api_report) {
+        currentCase.vlm_api_report = data.vlm_api_report;
+        renderVlmReport(data.vlm_api_report);
+        if (data.vlm_api_report.status === 'ok') {
+          document.getElementById('statusText').textContent = `✅ 第三方大模型 (${data.vlm_api_report.model}) 联合取证完成！`;
+        } else {
+          document.getElementById('statusText').textContent = `⚠️ ${data.vlm_api_report.error}`;
+        }
+      }
+    }
+
+    function renderVlmReport(vlm) {
+      const box = document.getElementById('vlmReportBox');
+      if (!vlm) {
+        box.style.display = 'none';
+        return;
+      }
+      box.style.display = 'block';
+      if (vlm.status !== 'ok') {
+        document.getElementById('vlmModelTitle').textContent = '⚠️ 第三方大模型 API 提示';
+        document.getElementById('vlmConfBadge').textContent = '待接入';
+        document.getElementById('vlmRegionDesc').textContent = vlm.error || '调用失败';
+        document.getElementById('vlmReasoning').textContent = '';
+        document.getElementById('vlmCluesList').innerHTML = '';
+        return;
+      }
+      const pr = vlm.parsed_report || {};
+      document.getElementById('vlmModelTitle').textContent = `🤖 ${vlm.model} 裁定：${pr.verdict_zh || pr.final_verdict || 'AI 伪造/篡改'}`;
+      const conf = Math.round(Number(pr.confidence_score || 0.88) * 100);
+      document.getElementById('vlmConfBadge').textContent = `API 置信度 ${conf}%`;
+      document.getElementById('vlmRegionDesc').textContent = pr.tampered_region_desc ? `🎯 锁定破绽区域：${pr.tampered_region_desc}` : '';
+      document.getElementById('vlmReasoning').textContent = pr.reasoning_summary || '';
+      const clues = Array.isArray(pr.visual_clues_found) ? pr.visual_clues_found : [];
+      document.getElementById('vlmCluesList').innerHTML = clues.map(c => `<li>${c}</li>`).join('');
     }
 
     function renderPresets() {
@@ -603,6 +835,7 @@
       document.getElementById('complexityBadge').textContent =
         `背景复杂度分级：${caseData.signal_evaluation.complexity_tier} | RDD 去偏校准分：${caseData.signal_evaluation.debiased_rdd_score}`;
       document.getElementById('humanBanner').textContent = `💡 人工判别要诀：${caseData.human_note}`;
+      renderVlmReport(caseData.vlm_api_report);
 
       const df = caseData.deep_framework;
       const le = caseData.local_edit_analysis || {};
@@ -700,21 +933,26 @@
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      document.getElementById('statusText').textContent = `⏳ 正在对 ${file.name} 进行底层框架与多模态信号分析...`;
+      const autoCall = document.getElementById('autoCallToggle').checked;
+      document.getElementById('statusText').textContent = `⏳ 正在对 ${file.name} 执行本地底层物理检测${autoCall ? ' + 第三方 API 联合鉴别' : ''}...`;
 
       const reader = new FileReader();
       reader.onload = async () => {
         const res = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name, image_base64: reader.result })
+          body: JSON.stringify({
+            filename: file.name,
+            image_base64: reader.result,
+            call_vlm: autoCall
+          })
         });
         const data = await res.json();
         if (data.result) {
           allPresets.push(data.result);
           renderPresets();
           selectCase(data.result, allPresets.length - 1);
-          document.getElementById('statusText').textContent = `✅ ${file.name} 分析完成！`;
+          document.getElementById('statusText').textContent = `✅ ${file.name} 鉴别完成！`;
         }
       };
       reader.readAsDataURL(file);

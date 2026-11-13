@@ -61,20 +61,23 @@ flowchart TD
 
 ```text
 PixelSentinel-Forensics/
+├── start_pixelsentinel.bat                                    # 🚀 Windows 双击一键启动程序（自动启动服务并打开界面）
+├── run_app.py                                                 # 🚀 跨平台一键启动入口（python run_app.py）
 ├── README.md                                                  # 项目总览与研究导航
 ├── requirements.txt                                           # 依赖包配置
 ├── data/
-│   └── human_forensic_rules.json                              # ⭐ 人机协同沉淀的五大人工取证专家规则库 (HUMAN-RULE-001~005)
-├── examples/                                                  # 四级伪造难度演进基准测试图集 (MJ5 / 手写单 / 便利贴 / 无文字角落)
+│   └── human_forensic_rules.json                              # ⭐ 人机协同沉淀的六大人工取证专家规则库 (HUMAN-RULE-001~006)
+├── examples/                                                  # 六大伪造与局部改图基准测试图集
 ├── docs/
 │   ├── forensic_prompt_engineering_and_sota_training.md       # ⭐ 让AI注意到微观破绽的专用提示词库 + 顶会低算力训练方案调研
 │   ├── opencut_and_text_tampering_forensics.md                # 深度调研：OpenCut 手写字篡改机理与五维鉴别法
 │   ├── detector_bias_and_rdd_debiasing.md                     # 理论与实验：AI 检测器背景复杂度偏差诊断与去偏方案
 │   └── related_works_matrix.md                                # 2024–2026 顶会开源仓库对标矩阵（Benchmark & SOTA）
 └── src/
-    ├── web_app.py                                             # 🌐 PixelSentinel AI 图像鉴别与取证网站后端 (一键启动 Web 平台)
+    ├── web_app.py                                             # 🌐 PixelSentinel 独立取证程序后端服务
+    ├── vlm_api_client.py                                      # 🔌 第三方多模态大模型 API 接入客户端（支持硅基流动/千问/智谱/GPT-4o/Gemini）
     ├── static/
-    │   └── index.html                                         # 🌐 交互式 Web 前端界面（支持拖拽上传、六大基准对比、3x局部篡改放大镜）
+    │   └── index.html                                         # 🌐 交互式前端界面（内置 API 接入配置栏、六大基准对比、3x局部篡改放大镜）
     ├── local_edit_detector.py                                 # 🎯 局部 AI 改图/涂抹重绘定位器（32x32 滑窗中心-周边差分 + 2D 离轴 FFT 谐波）
     ├── deep_framework_forensics.py                            # 🔬 图片底层物理与生成框架检测（Bayer色散非对称度 + VAE 8x8步长周期）
     ├── evaluate_sample.py                                     # 端到端多模态信号 + 去偏评估器
@@ -104,18 +107,25 @@ PixelSentinel-Forensics/
 
 ---
 
-## 🌐 五、快速启动 AI 图像鉴别网站（Web 平台）与命令行工具
+## 🌐 五、一键启动独立取证程序 & 接入第三方大模型 API
 
-### 1. 一键启动交互式 AI 图像鉴别网站（推荐，零额外依赖）
+### 1. 双击一键启动程序（自动拉起服务并打开取证操作台）
 
-```bash
-# 启动本地 Web 取证平台（默认端口 8088）
-D:\aigi\venv\Scripts\python.exe src/web_app.py --port 8088
-```
-打开浏览器访问 `http://127.0.0.1:8088`，即可体验：
-- **任意图片上传实时鉴别**（自动输出综合伪造置信度、六合一信号热力图、Top-3 可疑框与 2x 像素放大镜）；
-- **底层物理框架仪表盘**（实时展示 Bayer CFA 光学色散非对称度、VAE `4×4 / 8×8` 潜空间周期比、传感器底噪分裂比、RDD 去偏得分）；
-- **四级伪造演进基准案例一键切换**与**专家取证 Prompt 一键复制**。
+- **Windows 双击启动**：直接双击仓库根目录下的 [`start_pixelsentinel.bat`](start_pixelsentinel.bat)
+- **命令行一键启动**：
+  ```bash
+  python run_app.py
+  ```
+启动后程序会自动打开浏览器进入 `http://127.0.0.1:8088` 操作台。
+
+### 2. 即插即用接入第三方视觉大模型 API（无需本地算力）
+
+在界面顶部的 **「🔌 第三方多模态大模型 API 接入配置」** 栏中：
+1. **选择服务商预设**：内置支持 **硅基流动 SiliconFlow (`Qwen/Qwen2.5-VL-72B-Instruct`)**、**阿里云百炼 (`qwen-vl-max`)**、**智谱清言 (`glm-4v-plus`)**、**OpenAI (`gpt-4o`)**、**OpenRouter**、**Google Gemini (`gemini-2.5-flash`)** 以及本地 **Ollama / vLLM**；
+2. **填入 API Key 并点击「💾 保存配置」**：密钥仅保存在本地 `config/api_config.json`（已被 `.gitignore` 排除，绝不上传仓库）；
+3. **自动物理显影 + API 联合裁定**：上传任意待检图片（或点击顶部的「🤖 调用第三方 API 深度鉴别当前图」），程序会自动：
+   - 第一步（本地毫秒级）：计算底层 **Bayer 色散非对称度**、**VAE 步长周期**、**32×32 滑窗局部改图差分热力图**，并生成 **3 倍放大诊断图**；
+   - 第二步（API 协同）：将**「原始待检图 + 局部放大诊断图 + 注入定量信号的六大专家规则 Prompt」**一并发送给第三方多模态大模型 API，自动解析 JSON 鉴别结论并与本地物理得分加权融合。
 
 `src/forensics_toolkit.py` 提供了开箱即用的多维图像取证脚本，无需重训大模型即可对任意待检图片（实拍图、AIGC 合成图、OpenCut 局部改字图）生成**六合一可视化诊断报告**：
 

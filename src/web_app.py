@@ -21,7 +21,9 @@ import hashlib
 import io
 import json
 import mimetypes
+import threading
 import traceback
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -31,6 +33,12 @@ from deep_framework_forensics import run_deep_framework_inspection
 from evaluate_sample import evaluate_image_end_to_end
 from human_ai_feedback_loop import add_human_observation, load_rules
 from local_edit_detector import analyze_local_ai_edit
+from vlm_api_client import (
+    call_third_party_vlm_forensics,
+    get_public_config,
+    load_api_config,
+    save_api_config,
+)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "src" / "static"
@@ -151,7 +159,46 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
         "deep_framework": deep_res,
         "local_edit_analysis": local_edit_stats,
         "forensic_prompt_markdown": prompt_text,
+        "vlm_api_report": None,
     }
+
+
+def run_vlm_judge_on_payload(case_payload: Dict[str, Any], override_cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    orig_rel = case_payload["images"]["original"].lstrip("/")
+    if orig_rel.startswith("files/"):
+        orig_rel = orig_rel[len("files/") :]
+    orig_path = (ROOT_DIR / orig_rel).resolve()
+
+    diag_rel = case_payload["images"].get("local_edit_map") or case_payload["images"].get("visual_prompt")
+    diag_path = None
+    if diag_rel:
+        clean_diag = diag_rel.lstrip("/")
+        if clean_diag.startswith("files/"):
+            clean_diag = clean_diag[len("files/") :]
+        diag_path = (ROOT_DIR / clean_diag).resolve()
+
+    df = case_payload.get("deep_framework", {})
+    le = case_payload.get("local_edit_analysis", {})
+    se = case_payload.get("signal_evaluation", {})
+    metrics_digest = {
+        "local_signal_verdict": case_payload.get("verdict"),
+        "local_combined_probability": case_payload.get("combined_probability"),
+        "bayer_chromatic_asymmetry": df.get("test3_rgb_highfreq_coupling", {}).get("bayer_chromatic_asymmetry"),
+        "vae_to_bayer_periodicity_ratio": df.get("test2_vae_stride_vs_bayer_cfa", {}).get("vae_to_bayer_periodicity_ratio"),
+        "sensor_noise_non_uniformity": df.get("test1_sensor_noise_physics", {}).get("noise_non_uniformity_ratio"),
+        "local_edit_max_zscore": le.get("max_patch_zscore"),
+        "local_edit_primary_bbox": le.get("primary_edit_bbox"),
+        "is_localized_ai_edit": le.get("is_localized_ai_edit"),
+        "debiased_rdd_score": se.get("debiased_rdd_score"),
+    }
+
+    return call_third_party_vlm_forensics(
+        original_img_path=orig_path,
+        diagnostic_img_path=diag_path,
+        forensic_prompt_md=case_payload.get("forensic_prompt_markdown", ""),
+        local_metrics_summary=metrics_digest,
+        override_config=override_cfg,
+    )
 
 
 class ForensicHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -193,7 +240,11 @@ class ForensicHTTPRequestHandler(BaseHTTPRequestHandler):
             for c in PRESET_CASES:
                 if c["file_path"].exists():
                     cases.append(build_case_payload(c["file_path"], c["eval_dir"], c))
-            self._send_json({"presets": cases, "human_rules": load_rules()})
+            self._send_json({"presets": cases, "human_rules": load_rules(), "api_config": get_public_config()})
+            return
+
+        if path == "/api/config":
+            self._send_json(get_public_config())
             return
 
         if path == "/api/rules":
@@ -222,8 +273,13 @@ class ForensicHTTPRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "Invalid JSON body"}, status=400)
             return
 
-        if parsed.path == "/api/analyze":
-            # Expects {"filename": "xxx.jpg", "image_base64": "data:image/...;base64,..."}
+        if parsed.path == "/api/config":
+            save_api_config(payload)
+            self._send_json({"status": "ok", "api_config": get_public_config()})
+            return
+
+        if parsed.path in ("/api/analyze", "/api/v1/detect"):
+            # Expects {"filename": "xxx.jpg", "image_base64": "data:image/...;base64,...", "call_vlm": true/false}
             b64_str = payload.get("image_base64", "")
             orig_name = payload.get("filename", "upload.jpg")
             if "," in b64_str:
@@ -242,7 +298,33 @@ class ForensicHTTPRequestHandler(BaseHTTPRequestHandler):
 
             try:
                 result = build_case_payload(saved_img, eval_out, None)
+                cfg = load_api_config()
+                should_call_vlm = payload.get("call_vlm", cfg.get("auto_call_on_upload", True))
+                if should_call_vlm and (cfg.get("api_key") or payload.get("api_key")):
+                    vlm_res = run_vlm_judge_on_payload(result, override_cfg=payload.get("api_override"))
+                    result["vlm_api_report"] = vlm_res
+                    if vlm_res.get("status") == "ok" and vlm_res.get("parsed_report"):
+                        pr = vlm_res["parsed_report"]
+                        vlm_conf = float(pr.get("confidence_score", result["combined_probability"]))
+                        result["combined_probability"] = round(0.5 * result["combined_probability"] + 0.5 * vlm_conf, 2)
+                        if pr.get("verdict_zh"):
+                            result["verdict"] = f"{pr['verdict_zh']} (本地物理 + {vlm_res.get('model')} 联合裁定)"
                 self._send_json({"status": "ok", "result": result})
+            except Exception as e:
+                traceback.print_exc()
+                self._send_json({"error": str(e)}, status=500)
+            return
+
+        if parsed.path == "/api/vlm_judge":
+            # Runs third-party VLM API on an existing case payload or image path
+            case_data = payload.get("case_data")
+            override_cfg = payload.get("api_override")
+            if not case_data:
+                self._send_json({"error": "Missing case_data"}, status=400)
+                return
+            try:
+                vlm_res = run_vlm_judge_on_payload(case_data, override_cfg=override_cfg)
+                self._send_json({"status": "ok", "vlm_api_report": vlm_res})
             except Exception as e:
                 traceback.print_exc()
                 self._send_json({"error": str(e)}, status=500)
@@ -263,13 +345,23 @@ class ForensicHTTPRequestHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Start PixelSentinel AI Image Forensics Web Server")
+    parser = argparse.ArgumentParser(description="Start PixelSentinel AI Image Forensics Standalone Program")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Host interface")
     parser.add_argument("--port", type=int, default=8088, help="Port number")
+    parser.add_argument("--open-browser", action="store_true", help="Automatically open default browser on startup")
     args = parser.parse_args()
 
+    url = f"http://{args.host}:{args.port}"
     server = ThreadingHTTPServer((args.host, args.port), ForensicHTTPRequestHandler)
-    print(f"PixelSentinel Web Server running at http://{args.host}:{args.port}")
+    print("=" * 72)
+    print(f"🛡️  PixelSentinel AI 图像伪造与局部改图取证程序已启动！")
+    print(f"🌐  访问地址: {url}")
+    print(f"🔌  支持一键接入第三方多模态 API (硅基流动 / 通义千问 Qwen-VL / 智谱 GLM-4V / GPT-4o / Gemini)")
+    print("=" * 72)
+
+    if args.open_browser:
+        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+
     server.serve_forever()
 
 

@@ -16,6 +16,9 @@ report_out/
 *.ckpt
 *.safetensors
 
+# Local API Keys & User Config (Never commit keys!)
+config/api_config.json
+
 # OS & Editor files
 .DS_Store
 Thumbs.db
