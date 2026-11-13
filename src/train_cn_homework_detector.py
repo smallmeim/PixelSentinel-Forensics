@@ -258,6 +258,7 @@ class HomeworkForensicNet(nn.Module):
         )
 
         # Fusion Classifier
+        self.phys_head = nn.Linear(32, 2)
         self.head = nn.Sequential(
             nn.Linear(64 + 32, 48),
             nn.GELU(),
@@ -265,7 +266,7 @@ class HomeworkForensicNet(nn.Module):
             nn.Linear(48, 2),
         )
 
-    def forward(self, x_img: torch.Tensor, x_phys: torch.Tensor) -> torch.Tensor:
+    def forward(self, x_img: torch.Tensor, x_phys: torch.Tensor, return_phys_logits: bool = False) -> torch.Tensor:
         s = self.stem(x_img)
         s = self.layer1(s)
         s = self.layer2(s)
@@ -273,7 +274,10 @@ class HomeworkForensicNet(nn.Module):
         s = self.pool(s).flatten(1)
         s_emb = F.gelu(self.spatial_proj(s))
         p_emb = self.phys_mlp(x_phys)
-        return self.head(torch.cat([s_emb, p_emb], dim=1))
+        fused_logits = self.head(torch.cat([s_emb, p_emb], dim=1))
+        if return_phys_logits:
+            return fused_logits, self.phys_head(p_emb)
+        return fused_logits
 
 
 def compute_roc_auc(y_true: np.ndarray, y_score: np.ndarray) -> float:
@@ -387,8 +391,8 @@ def main() -> None:
             y = y.to(device)
 
             optimizer.zero_grad()
-            logits = model(x_img, x_phys)
-            loss = criterion(logits, y)
+            logits, phys_logits = model(x_img, x_phys, return_phys_logits=True)
+            loss = criterion(logits, y) + 0.6 * criterion(phys_logits, y)
             loss.backward()
             optimizer.step()
 

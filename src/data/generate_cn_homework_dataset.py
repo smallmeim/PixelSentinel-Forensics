@@ -77,34 +77,33 @@ def _create_paper_canvas(w: int, h: int, rng: np.random.Generator, is_real: bool
 def _simulate_bayer_optical_dispersion(arr: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Real smartphone camera lens + Bayer CFA demosaicing introduces sub-pixel R/B lateral shift & noise."""
     out = arr.copy()
-    # Sub-pixel chromatic shift on R and B channels (0.35px lateral CA)
+    alpha_r = float(rng.uniform(0.15, 0.42))
+    alpha_b = float(rng.uniform(0.12, 0.38))
     r_shift = np.roll(out[:, :, 0], 1, axis=1)
-    out[:, :, 0] = 0.65 * out[:, :, 0] + 0.35 * r_shift
+    out[:, :, 0] = (1.0 - alpha_r) * out[:, :, 0] + alpha_r * r_shift
     b_shift = np.roll(out[:, :, 2], -1, axis=0)
-    out[:, :, 2] = 0.70 * out[:, :, 2] + 0.30 * b_shift
+    out[:, :, 2] = (1.0 - alpha_b) * out[:, :, 2] + alpha_b * b_shift
     # Real CMOS sensor PRNU + shot noise
-    out += rng.normal(0.0, rng.uniform(1.4, 2.4), out.shape).astype(np.float32)
+    out += rng.normal(0.0, rng.uniform(0.9, 2.4), out.shape).astype(np.float32)
     return out
 
 
 def _simulate_ai_vae_artifacts(arr: np.ndarray, rng: np.random.Generator, mode: int) -> np.ndarray:
     """
     AI-cloned handwriting exhibits:
-      - VAE 4x4 & 8x8 upsampling checkerboard lattice
-      - Coupled R/G/B smooth residual (missing Bayer dispersion)
-      - Slight anti-aliasing halo from latent decoding
+      - Subtle to moderate VAE 4x4 & 8x8 upsampling checkerboard lattice
+      - Coupled R/G/B smooth residual (missing Bayer optical dispersion)
     """
     h, w, _ = arr.shape
     yy, xx = np.mgrid[0:h, 0:w]
-    amp4 = rng.uniform(2.0, 3.6)
-    amp8 = rng.uniform(1.6, 2.8)
+    amp4 = rng.uniform(0.22, 1.6)
+    amp8 = rng.uniform(0.08, 1.2)
     lattice = (
         amp4 * np.cos(2.0 * np.pi * xx / 4.0) * np.cos(2.0 * np.pi * yy / 4.0)
         + amp8 * np.cos(2.0 * np.pi * xx / 8.0) * np.cos(2.0 * np.pi * yy / 8.0)
     )
     out = arr.copy()
     if mode == 2:
-        # Hybrid inpainted homework: lattice strongest on text band regions
         mask = np.zeros((h, w), dtype=np.float32)
         for ly in range(54, h - 20, 44):
             mask[max(0, ly - 32) : ly + 4, 24 : w - 24] = 1.0
@@ -112,9 +111,13 @@ def _simulate_ai_vae_artifacts(arr: np.ndarray, rng: np.random.Generator, mode: 
     else:
         out += lattice[:, :, None]
 
-    # Slight latent smoothing on RGB jointly (reduces Bayer independence)
-    pil_sm = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(radius=0.45))
-    out = 0.75 * out + 0.25 * np.asarray(pil_sm, dtype=np.float32)
+    # Joint RGB latent smoothing (reduces Bayer independence) + subtle synthetic grain
+    pil_sm = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).filter(
+        ImageFilter.GaussianBlur(radius=float(rng.uniform(0.25, 0.45)))
+    )
+    mix = float(rng.uniform(0.15, 0.30))
+    out = (1.0 - mix) * out + mix * np.asarray(pil_sm, dtype=np.float32)
+    out += rng.normal(0.0, rng.uniform(0.4, 1.2), (h, w, 1)).astype(np.float32)  # correlated RGB grain
     return out
 
 
@@ -173,8 +176,11 @@ def generate_single_sample(
         # Subtle capillary ink bleed
         ink_arr = np.asarray(ink_layer.filter(ImageFilter.GaussianBlur(radius=0.35)), dtype=np.float32) / 255.0
     else:
-        # AI anti-aliased soft halo
-        ink_arr = np.asarray(ink_layer.filter(ImageFilter.GaussianBlur(radius=0.65)), dtype=np.float32) / 255.0
+        # Realistic AI anti-aliased edge (subtle, matching modern diffusion/VAE sharpness)
+        ink_arr = np.asarray(
+            ink_layer.filter(ImageFilter.GaussianBlur(radius=float(rng.uniform(0.28, 0.48)))),
+            dtype=np.float32,
+        ) / 255.0
 
     m = ink_arr[:, :, None]
     # Multiplicative ink-paper blending on real vs alpha overlay on AI
