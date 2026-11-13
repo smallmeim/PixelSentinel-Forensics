@@ -61,14 +61,20 @@ flowchart TD
 
 ```text
 PixelSentinel-Forensics/
-├── README.md                                      # 项目总览与研究导航
-├── requirements.txt                               # 依赖包配置（兼容 PyTorch cu128 与轻量级取证）
+├── README.md                                                  # 项目总览与研究导航
+├── requirements.txt                                           # 依赖包配置
 ├── docs/
-│   ├── opencut_and_text_tampering_forensics.md    # 深度调研：OpenCut 手写字篡改机理与五维鉴别法
-│   ├── detector_bias_and_rdd_debiasing.md         # 理论与实验：AI 检测器背景复杂度偏差诊断与去偏方案
-│   └── related_works_matrix.md                    # 2024–2026 顶会开源仓库对标矩阵（Benchmark & SOTA）
+│   ├── forensic_prompt_engineering_and_sota_training.md       # ⭐ 核心：让AI注意到微观破绽的专用提示词库 + 顶会低算力训练方案调研
+│   ├── opencut_and_text_tampering_forensics.md                # 深度调研：OpenCut 手写字篡改机理与五维鉴别法
+│   ├── detector_bias_and_rdd_debiasing.md                     # 理论与实验：AI 检测器背景复杂度偏差诊断与去偏方案
+│   └── related_works_matrix.md                                # 2024–2026 顶会开源仓库对标矩阵（Benchmark & SOTA）
 └── src/
-    └── forensics_toolkit.py                       # 多维图像取证与去偏诊断工具（支持命令行输出六合一热力图报告）
+    ├── forensic_prompt_pipeline.py                            # ⭐ 免训练：自动生成「视觉提示拼图 + 定量信号注入取证 Prompt」
+    ├── forensics_toolkit.py                                   # 多维图像取证与去偏诊断工具（输出六合一热力图报告）
+    ├── models/
+    │   └── clip_forensic_classifier.py                        # 冻结CLIP-ViT + Top-K局部块异常池化 + SRM侧信道轻量级模型定义
+    └── data/
+        └── synthesize_tampered_data.py                        # OpenCut局部改字与AIGC配对样本合成器
 ```
 
 ---
