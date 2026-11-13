@@ -486,7 +486,7 @@
             <div class="bar-bg"><div class="bar-fill" id="barNoise" style="width:50%"></div></div>
 
             <div class="metric-row">
-              <span class="metric-label">4. 局部块去偏重建异常峰值倍率 (RDD Patch Peak)</span>
+              <span class="metric-label">4. 局部 AI 改图差分峰值 Z-Score (滑窗定位篡改框)</span>
               <span class="metric-val" id="valPeak">--</span>
             </div>
             <div class="bar-bg"><div class="bar-fill" id="barPeak" style="width:50%"></div></div>
@@ -501,17 +501,20 @@
       <div>
         <div class="panel">
           <div class="tabs-header">
-            <button class="tab-btn active" onclick="switchTab('visual_prompt', this)">
-              🔍 1. Top-3 可疑框与 2x 局部放大镜 (Visual Prompt)
+            <button class="tab-btn active" onclick="switchTab('local_edit_map', this)">
+              🎯 1. 局部 AI 改图定位与 3x 放大镜 (Local Edit Map)
+            </button>
+            <button class="tab-btn" onclick="switchTab('visual_prompt', this)">
+              🔍 2. Top-3 可疑框与 SRM 残差 (Visual Prompt)
             </button>
             <button class="tab-btn" onclick="switchTab('six_panel', this)">
-              📊 2. 六合一多模态信号热力图 (ELA / SRM / RDD)
+              📊 3. 六合一多模态信号热力图 (ELA / SRM / RDD)
             </button>
             <button class="tab-btn" onclick="switchTab('original', this)">
-              🖼️ 3. 原始待检图 (1:1 审阅)
+              🖼️ 4. 原始待检图 (1:1 审阅)
             </button>
             <button class="tab-btn" onclick="switchTab('prompt_md', this)">
-              🤖 4. 注入定量信号的专用取证 Prompt (一键复制)
+              🤖 5. 注入定量信号的专用取证 Prompt (一键复制)
             </button>
           </div>
 
@@ -559,7 +562,7 @@
   <script>
     let allPresets = [];
     let currentCase = null;
-    let currentTab = 'visual_prompt';
+    let currentTab = 'local_edit_map';
 
     async function initApp() {
       const res = await fetch('/api/presets');
@@ -602,10 +605,12 @@
       document.getElementById('humanBanner').textContent = `💡 人工判别要诀：${caseData.human_note}`;
 
       const df = caseData.deep_framework;
+      const le = caseData.local_edit_analysis || {};
       const bayerAsym = df.test3_rgb_highfreq_coupling.bayer_chromatic_asymmetry;
       const vaeRatio = df.test2_vae_stride_vs_bayer_cfa.vae_to_bayer_periodicity_ratio;
       const noiseRatio = df.test1_sensor_noise_physics.noise_non_uniformity_ratio;
-      const peakRatio = caseData.signal_evaluation.top_suspicious_boxes?.[0]?.srm_noise_deviation_ratio || 1.0;
+      const localZ = le.max_patch_zscore || 0.0;
+      const editBbox = le.primary_edit_bbox ? `[${le.primary_edit_bbox.join(', ')}]` : '--';
 
       document.getElementById('valBayer').textContent = `${bayerAsym} (真图基准 ≈ 0.042)`;
       document.getElementById('barBayer').style.width = `${Math.min(100, Math.max(12, (0.045 - bayerAsym) / 0.045 * 100))}%`;
@@ -616,10 +621,14 @@
       document.getElementById('valNoise').textContent = `${noiseRatio}x`;
       document.getElementById('barNoise').style.width = `${Math.min(100, noiseRatio * 12)}%`;
 
-      document.getElementById('valPeak').textContent = `${peakRatio}x (Top-1 框偏离度)`;
-      document.getElementById('barPeak').style.width = `${Math.min(100, peakRatio * 10)}%`;
+      document.getElementById('valPeak').textContent = `Z = ${localZ}σ | 框 ${editBbox}`;
+      document.getElementById('barPeak').style.width = `${Math.min(100, localZ * 6)}%`;
 
+      const localFlag = le.is_localized_ai_edit
+        ? [`LOCAL_AI_EDIT_DETECTED: 滑窗上下文差分锁定局部篡改框 ${editBbox} (峰值 Z=${localZ}σ, 篡改面积占比 ${(le.tampered_area_fraction * 100).toFixed(2)}%)`]
+        : [];
       const evList = [
+        ...localFlag,
         ...(df.underlying_framework_flags || []),
         ...(caseData.signal_evaluation.automated_evidence_chain || []),
       ];
@@ -655,7 +664,10 @@
       imgStage.style.display = 'flex';
       promptStage.style.display = 'none';
 
-      if (currentTab === 'visual_prompt') {
+      if (currentTab === 'local_edit_map') {
+        imgEl.src = currentCase.images.local_edit_map || currentCase.images.visual_prompt;
+        capEl.textContent = '左：局部 AI 改图/重绘边界框定位 | 中：32x32 滑窗上下文差分 Z-Score 热力图 | 右：篡改区域 3 倍高清放大镜（检视边缘截断与网格）';
+      } else if (currentTab === 'visual_prompt') {
         imgEl.src = currentCase.images.visual_prompt;
         capEl.textContent = '左：Top-3 算法锁定可疑框 | 中：SRM 高频传感器噪声残差显影 | 右：#1 头号可疑区 2 倍像素放大与边缘微梯度';
       } else if (currentTab === 'six_panel') {
@@ -663,7 +675,7 @@
         capEl.textContent = '六合一诊断：1.原图 2.ELA重压缩残差 3.SRM高频噪声(OpenCut检测) 4.笔画微梯度 5.背景复杂度分层 6.RDD旋转/低通去偏异常图';
       } else {
         imgEl.src = currentCase.images.original;
-        capEl.textContent = '原始待检图像（可结合左侧证据链与人类专家五大法则审阅细节）';
+        capEl.textContent = '原始待检图像（可结合左侧证据链与人类专家法则审阅细节）';
       }
     }
 

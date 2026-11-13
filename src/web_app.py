@@ -30,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 from deep_framework_forensics import run_deep_framework_inspection
 from evaluate_sample import evaluate_image_end_to_end
 from human_ai_feedback_loop import add_human_observation, load_rules
+from local_edit_detector import analyze_local_ai_edit
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "src" / "static"
@@ -42,7 +43,7 @@ PRESET_CASES = [
     {
         "id": "mj5",
         "title": "等级 1：集市老人肖像 (Midjourney v5)",
-        "subtitle": "典型表现：宏观高频雕刻纹路与背景传感器底噪真空",
+        "subtitle": "全图 AI 生成：宏观高频雕刻纹路与背景传感器底噪真空",
         "image_rel": "/files/examples/mj5_market_vendor.png",
         "file_path": EXAMPLES_DIR / "mj5_market_vendor.png",
         "eval_dir": OUTPUTS_DIR / "eval_mj5",
@@ -51,7 +52,7 @@ PRESET_CASES = [
     {
         "id": "lab_note",
         "title": "等级 2：教室课桌手写实验单 (文档/手写伪造)",
-        "subtitle": "典型表现：课桌木纹逼真，但手写字呈‘电脑字库印刷体化’",
+        "subtitle": "全图 AI 生成：课桌木纹逼真，但手写字呈‘电脑字库印刷体化’",
         "image_rel": "/files/examples/handwritten_lab_note.jpg",
         "file_path": EXAMPLES_DIR / "handwritten_lab_note.jpg",
         "eval_dir": OUTPUTS_DIR / "eval_lab_note",
@@ -60,7 +61,7 @@ PRESET_CASES = [
     {
         "id": "sticky_note",
         "title": "等级 3：脏键盘与涂改便利贴 (高拟真局部涂改)",
-        "subtitle": "典型表现：指纹与饼干碎屑极真，需靠刻意摆拍构图与底层框架破局",
+        "subtitle": "高拟真生成：指纹与饼干碎屑极真，靠摆拍构图与底层框架破局",
         "image_rel": "/files/examples/sticky_note_memo.jpg",
         "file_path": EXAMPLES_DIR / "sticky_note_memo.jpg",
         "eval_dir": OUTPUTS_DIR / "eval_sticky_note",
@@ -69,11 +70,29 @@ PRESET_CASES = [
     {
         "id": "room_corner",
         "title": "等级 4：无文字房间角落插座 (全图零文字高隐蔽性)",
-        "subtitle": "典型表现：无文字可查，靠一维电线拓扑断裂 + 底层 Bayer/VAE 铁证识别",
+        "subtitle": "高隐蔽生成：无文字可查，靠一维电线拓扑断裂 + Bayer/VAE 铁证识别",
         "image_rel": "/files/examples/mundane_room_corner.jpg",
         "file_path": EXAMPLES_DIR / "mundane_room_corner.jpg",
         "eval_dir": OUTPUTS_DIR / "eval_room_corner",
         "human_note": "HUMAN-RULE-005：两个充电头走出的两根线半路合并消失（另一个充电头的线不见了），且绕椅腿自成死循环；底层 Bayer 色散非对称度仅 0.0061。",
+    },
+    {
+        "id": "opencut_edit",
+        "title": "专项 A：实验记录单局部 AI 改字 (FAIL → PASS)",
+        "subtitle": "局部 AI 改图 (OpenCut)：仅篡改 B201 行状态词，滑窗差分锁定 [816, 320, 928, 384]",
+        "image_rel": "/files/examples/opencut_modified_note.jpg",
+        "file_path": EXAMPLES_DIR / "opencut_modified_note.jpg",
+        "eval_dir": OUTPUTS_DIR / "eval_opencut_edit",
+        "human_note": "AI 改图特征：局部将 FAIL 替换为 PASS 后，横线在重绘框左右边缘发生轻微截断，且框内存在 Z=9.06σ 的 2D VAE 网格周期与字体笔锋突变。",
+    },
+    {
+        "id": "real_inpaint",
+        "title": "专项 B：100% 真实风景照局部 AI 抹除重绘",
+        "subtitle": "真实照片 + 局部 AI 改图：97% 区域具真实 Bayer 色散，精准揪出河面重绘框 [192, 304, 288, 368]",
+        "image_rel": "/files/examples/real_photo_ai_inpaint.jpg",
+        "file_path": EXAMPLES_DIR / "real_photo_ai_inpaint.jpg",
+        "eval_dir": OUTPUTS_DIR / "eval_real_inpaint",
+        "human_note": "真图改图最难防：全图 97% 保留真实相机传感器特征（全局易漏检），但河面局部抹除石头处暴露 Z=28.11σ 的中心-周边底噪跳变与解码器网格。",
     },
 ]
 
@@ -86,6 +105,14 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     else:
         eval_summary = json.loads(summary_file.read_text(encoding="utf-8"))
 
+    local_edit_map_file = eval_dir / f"{stem}_local_edit_map.jpg"
+    local_edit_json_file = eval_dir / f"{stem}_local_edit_stats.json"
+    if not local_edit_map_file.exists() or not local_edit_json_file.exists():
+        local_edit_stats = analyze_local_ai_edit(image_path, eval_dir)
+        local_edit_json_file.write_text(json.dumps(local_edit_stats, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        local_edit_stats = json.loads(local_edit_json_file.read_text(encoding="utf-8"))
+
     deep_res = run_deep_framework_inspection(image_path)
     prompt_md_file = eval_dir / f"{stem}_forensic_prompt.md"
     prompt_text = prompt_md_file.read_text(encoding="utf-8") if prompt_md_file.exists() else ""
@@ -93,25 +120,36 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     rel_dir = eval_dir.relative_to(ROOT_DIR).as_posix()
     img_rel = image_path.relative_to(ROOT_DIR).as_posix()
 
-    # Combine signal probability & deep framework confidence
+    # Combine signal probability, deep framework confidence, and localized AI edit detector
     sig_prob = float(eval_summary.get("ai_forgery_probability", 0.5))
     fw_prob = float(deep_res.get("framework_forgery_confidence", 0.5))
-    combined_prob = round(min(0.99, 0.5 * sig_prob + 0.5 * fw_prob + 0.15), 2)
+    is_local_edit = bool(local_edit_stats.get("is_localized_ai_edit", False))
+    local_z = float(local_edit_stats.get("max_patch_zscore", 0.0))
+
+    if is_local_edit and local_z >= 6.0:
+        combined_prob = round(min(0.99, max(0.88, 0.5 * sig_prob + 0.5 * fw_prob + 0.25)), 2)
+        bbox = local_edit_stats.get("primary_edit_bbox", [0, 0, 0, 0])
+        verdict_str = f"局部 AI 改图 / 涂抹重绘 (锁定篡改框 {bbox})"
+    else:
+        combined_prob = round(min(0.99, 0.5 * sig_prob + 0.5 * fw_prob + 0.15), 2)
+        verdict_str = "全图 AI 生成或伪造 (AI_FORGED)" if combined_prob >= 0.5 else "真实未改原图 (LIKELY_AUTHENTIC)"
 
     return {
         "id": case_meta["id"] if case_meta else stem,
         "title": case_meta["title"] if case_meta else f"自定义上传检测：{image_path.name}",
-        "subtitle": case_meta["subtitle"] if case_meta else "实时多模态信号 + 底层物理框架联合诊断",
-        "human_note": case_meta.get("human_note", "") if case_meta else "可结合下方右侧 2x 放大图与一维拓扑/次级文字法则进行人工复核。",
+        "subtitle": case_meta["subtitle"] if case_meta else "实时多模态信号 + 底层物理框架 + 局部 AI 改图差分诊断",
+        "human_note": case_meta.get("human_note", "") if case_meta else "可结合下方「局部 AI 改图定位」与「Top-3 可疑框放大镜」进行人工复核。",
         "combined_probability": combined_prob,
-        "verdict": "AI 生成或局部篡改 (AI_FORGED)" if combined_prob >= 0.5 else "疑似真实实拍 (LIKELY_AUTHENTIC)",
+        "verdict": verdict_str,
         "images": {
             "original": f"/files/{img_rel}",
             "six_panel": f"/files/{rel_dir}/{stem}_forensic_report.png",
             "visual_prompt": f"/files/{rel_dir}/{stem}_visual_prompt.jpg",
+            "local_edit_map": f"/files/{rel_dir}/{stem}_local_edit_map.jpg",
         },
         "signal_evaluation": eval_summary,
         "deep_framework": deep_res,
+        "local_edit_analysis": local_edit_stats,
         "forensic_prompt_markdown": prompt_text,
     }
 

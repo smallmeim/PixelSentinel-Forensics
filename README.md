@@ -74,7 +74,8 @@ PixelSentinel-Forensics/
 └── src/
     ├── web_app.py                                             # 🌐 PixelSentinel AI 图像鉴别与取证网站后端 (一键启动 Web 平台)
     ├── static/
-    │   └── index.html                                         # 🌐 交互式 Web 前端界面（支持拖拽上传、四级基准对比、2x放大镜与规则库）
+    │   └── index.html                                         # 🌐 交互式 Web 前端界面（支持拖拽上传、六大基准对比、3x局部篡改放大镜）
+    ├── local_edit_detector.py                                 # 🎯 局部 AI 改图/涂抹重绘定位器（32x32 滑窗中心-周边差分 + 2D 离轴 FFT 谐波）
     ├── deep_framework_forensics.py                            # 🔬 图片底层物理与生成框架检测（Bayer色散非对称度 + VAE 8x8步长周期）
     ├── evaluate_sample.py                                     # 端到端多模态信号 + 去偏评估器
     ├── forensic_prompt_pipeline.py                            # 免训练：自动生成「视觉提示拼图 + 定量信号注入取证 Prompt」
@@ -88,9 +89,9 @@ PixelSentinel-Forensics/
 
 ---
 
-## 🧠 四（补充）、人机协同沉淀的「五级 AI 伪造鉴别体系」（Human-in-the-Loop Rules）
+## 🧠 四（补充）、人机协同沉淀的「六级 AI 伪造与局部改图鉴别体系」（Human-in-the-Loop Rules）
 
-通过多轮真实案例的人机协同对抗实测，我们将 AI 伪造痕迹归纳为**「表观语义拓扑 + 底层物理框架」双层五级鉴别法则**（已内置于 [`data/human_forensic_rules.json`](data/human_forensic_rules.json) 与 Web 平台）：
+通过多轮真实案例的人机协同对抗实测，我们将 AI 伪造与局部改图痕迹归纳为**「表观语义拓扑 + 局部滑窗差分 + 底层物理框架」六级鉴别法则**（已内置于 [`data/human_forensic_rules.json`](data/human_forensic_rules.json) 与 Web 平台）：
 
 | 规则编号 | 维度名称 | 人工与算法联合判别要诀 | 对应典型场景 |
 | :--- | :--- | :--- | :--- |
@@ -99,6 +100,7 @@ PixelSentinel-Forensics/
 | **HUMAN-RULE-003** | **拍摄动机与光学景深悖论** | 现实中手机拍记录/日常物多为平视或正拍且小底景深很深；AI 倾向于采用斜切微距视角、刻意堆砌背景道具（杯子/外设）并伴随单反级大光圈虚化。 | 高拟真桌面摆拍、微距静物伪造 |
 | **HUMAN-RULE-004** | **次级场景小字/车牌乱码** | 主招牌大字（如「停车位」「超市」）已能写对，但放大车牌前缀汉字、挡泥板小字、告示牌副标题时，笔画退化为似字非字的序列乱码。 | 城市街景、门店招牌、路牌随手拍 |
 | **HUMAN-RULE-005** | **一维细长物体拓扑断裂 + 底层框架兜底** | 无文字图中，顺着电线/数据线/鞋带追踪可发现「两头合并消失」「有头无尾死循环」；若表观无失误，直接由底层 **Bayer 色散非对称度 (`<0.015`)** 与 **VAE `8×8` 步长自相关** 一票否决。 | 全图无文字日常角落、高阶变色龙级伪造 |
+| **HUMAN-RULE-006** | **局部 AI 改图/涂抹重绘边界（Center-Surround 差分）** | 当底图 95% 以上为真实照片仅局部改字（如 `FAIL` 改 `PASS`）或局部抹除重绘时，通过 `32×32` 滑窗检测 **2D 离轴 FFT 网格谐波 (`[8,8] / [4,4]`)** 与 **中心-周边 8 邻域底噪跳变**，精准框出篡改坐标 (`Z > 6σ`)。 | 真实照片局部 Inpainting、OpenCut 无痕改字 |
 
 ---
 
