@@ -1,0 +1,11 @@
+[
+  {
+    "rule_id": "HUMAN-RULE-001",
+    "timestamp": "2026-11-13T13:34:20",
+    "sample_image": "examples/mj5_market_vendor.png",
+    "category": "Macro Texture & Stylized Micro-Contrast",
+    "human_observation": "人物皮肤皱纹、草帽编织纹、动物毛发与树林呈现出过度雕刻与油画涂抹般的规律性AI纹路，一眼可辨",
+    "model_missed_why": "纯底层噪声算子仅将其视为高复杂度纹理(L4)，未区分自然光学纹理与生成式规则涂抹纹路",
+    "compiled_prompt_rule": "检查画面高频细节（皱纹、毛发、树叶、织物）是否呈现扩散模型特有的过度锐化雕刻感（Hyper-carved micro-contrast）与局部水彩般平滑涂抹并存的伪影"
+  }
+]
