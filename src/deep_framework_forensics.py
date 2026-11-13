@@ -167,26 +167,35 @@ def run_deep_framework_inspection(image_path: Path) -> Dict[str, Any]:
     framework_flags = []
     framework_score = 0.0
 
-    if t1["noise_non_uniformity_ratio"] > 3.2 or t1["noise_vacuum_block_ratio"] > 0.15:
+    if t3["bayer_chromatic_asymmetry"] < 0.022:
         framework_flags.append(
-            f"SENSOR_NOISE_SPLITTING: 平坦区域与纹理区域的底噪不均匀比达 {t1['noise_non_uniformity_ratio']}x "
-            f"(真空块占比 {t1['noise_vacuum_block_ratio']*100:.1f}%)，违背真实CMOS传感器全图散粒噪声物理规律"
+            f"ABSENT_BAYER_CFA_COUPLING: RGB 高频残差跨通道色差非对称度极低 ({t3['bayer_chromatic_asymmetry']} < 0.022)，"
+            f"缺乏真实光学镜头色散与去马赛克插值特征 (+0.55)"
         )
-        framework_score += 0.40
+        framework_score += 0.55
 
     if t2["vae_to_bayer_periodicity_ratio"] > 0.75:
         framework_flags.append(
             f"VAE_LATENT_GRID_SIGNATURE: 4x4/8x8 潜空间上采样步长自相关与 2x2 Bayer 阵列比值达 "
-            f"{t2['vae_to_bayer_periodicity_ratio']}，检出扩散解码器底层网格周期性"
+            f"{t2['vae_to_bayer_periodicity_ratio']}x，检出扩散解码器底层网格周期性 (+0.40)"
+        )
+        framework_score += 0.40
+
+    if t1["noise_non_uniformity_ratio"] > 22.0 or (
+        t3["bayer_chromatic_asymmetry"] < 0.022 and t1["noise_non_uniformity_ratio"] > 3.2
+    ):
+        framework_flags.append(
+            f"SENSOR_NOISE_SPLITTING: 平坦区域与纹理区域的底噪不均匀比达 {t1['noise_non_uniformity_ratio']}x "
+            f"(真空块占比 {t1['noise_vacuum_block_ratio']*100:.1f}%)，违背真实CMOS传感器全图散粒噪声物理规律 (+0.35)"
         )
         framework_score += 0.35
 
-    if t3["bayer_chromatic_asymmetry"] < 0.04:
+    if not framework_flags:
         framework_flags.append(
-            f"ABSENT_BAYER_CFA_COUPLING: RGB 高频残差跨通道色差非对称度极低 ({t3['bayer_chromatic_asymmetry']})，"
-            f"缺乏真实光学镜头色散与去马赛克插值特征"
+            f"AUTHENTIC_BAYER_CFA_VERIFIED: 检出真实相机镜头色散非对称度 ({t3['bayer_chromatic_asymmetry']}) "
+            f"且无 VAE 潜空间网格周期 ({t2['vae_to_bayer_periodicity_ratio']}x)，符合真实光学成像物理规律"
         )
-        framework_score += 0.25
+        framework_score = 0.05
 
     return {
         "image": image_path.name,

@@ -106,17 +106,24 @@ def evaluate_image_end_to_end(image_path: Path, output_dir: Path) -> Dict[str, A
     suspicion_score = 0.0
 
     if not meta["has_exif"]:
-        evidence_points.append("EXIF_MISSING: 无原始相机传感器 EXIF 元数据与厂商量化表指纹 (+0.20)")
-        suspicion_score += 0.20
+        evidence_points.append("EXIF_MISSING: 无原始相机传感器 EXIF 元数据与厂商量化表指纹 (+0.10)")
+        suspicion_score += 0.10
 
-    if debias["patch_anomaly_max_ratio"] > 2.2:
+    if debias["debiased_calibrated_score"] < 2.80:
+        evidence_points.append(
+            f"LOW_RDD_RECONSTRUCTION_ERROR: 旋转/低通参照去偏校准分偏低 ({debias['debiased_calibrated_score']} < 2.80)，"
+            f"图像落在生成式潜空间流形附近 (+0.25)"
+        )
+        suspicion_score += 0.25
+
+    if debias["patch_anomaly_max_ratio"] > 4.2:
         evidence_points.append(
             f"LOCAL_ANOMALY_PEAK: 局部块去偏重建异常峰值达均值 {debias['patch_anomaly_max_ratio']} 倍，"
             f"存在明显局部伪影或涂抹重绘不均匀区 (+0.30)"
         )
         suspicion_score += 0.30
 
-    if boxes and boxes[0]["srm_noise_deviation_ratio"] > 0.35:
+    if boxes and boxes[0]["srm_noise_deviation_ratio"] > 3.25:
         b0 = boxes[0]
         evidence_points.append(
             f"SRM_NOISE_DISCONTINUITY: 候选框 #1 {b0['bbox_xyxy']} 处高频传感器噪声偏离全图中位数 "

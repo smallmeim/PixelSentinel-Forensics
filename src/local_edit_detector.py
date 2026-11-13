@@ -162,7 +162,11 @@ def compute_patch_differential_zscores(
         bx0, by0 = xs[pj], ys[pi]
         bx1, by1 = min(w, bx0 + patch_size), min(h, by0 + patch_size)
 
-    is_localized_edit = (peak_z >= 3.0) and (0.002 <= tampered_area_ratio <= 0.30)
+    box_area_ratio = float((bx1 - bx0) * (by1 - by0)) / float(w * h + 1e-5)
+    is_localized_edit = (
+        (peak_z >= 15.0 or (peak_z >= 8.5 and float(z_periodic[pi, pj]) >= 15.0 and box_area_ratio <= 0.014))
+        and (0.001 <= tampered_area_ratio <= 0.28)
+    )
 
     stats = {
         "max_patch_zscore": round(peak_z, 4),

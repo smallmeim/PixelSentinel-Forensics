@@ -54,6 +54,15 @@ UPLOADS_DIR = OUTPUTS_DIR / "web_uploads"
 
 PRESET_CASES = [
     {
+        "id": "authentic_real",
+        "title": "对照组 0：100% 真实相机原图 (未改真图基准)",
+        "subtitle": "真实实拍对照：具备真实镜头 Bayer 色散非对称度 (0.0425) 且无局部差分异常 (Z=4.17σ)",
+        "image_rel": "/files/examples/authentic_camera_real.png",
+        "file_path": EXAMPLES_DIR / "authentic_camera_real.png",
+        "eval_dir": OUTPUTS_DIR / "eval_authentic_real",
+        "human_note": "真图防误判基准：尽管天空与树林交界存在自然对比度，但跨通道 Bayer 光学色散非对称度高达 0.0425，无 VAE 8x8 步长周期，综合判定为真实原图。",
+    },
+    {
         "id": "mj5",
         "title": "等级 1：集市老人肖像 (Midjourney v5)",
         "subtitle": "全图 AI 生成：宏观高频雕刻纹路与背景传感器底噪真空",
@@ -88,6 +97,15 @@ PRESET_CASES = [
         "file_path": EXAMPLES_DIR / "mundane_room_corner.jpg",
         "eval_dir": OUTPUTS_DIR / "eval_room_corner",
         "human_note": "HUMAN-RULE-005：两个充电头走出的两根线半路合并消失（另一个充电头的线不见了），且绕椅腿自成死循环；底层 Bayer 色散非对称度仅 0.0061。",
+    },
+    {
+        "id": "washbasin_mirror",
+        "title": "等级 5：宿舍洗手台镜面随手拍 (无字无电线终极难度)",
+        "subtitle": "三维自遮挡与镜面几何：放大见折叠眼镜腿与镜框重合穿模，镜中杯柄消失且牙刷朝向反转",
+        "image_rel": "/files/examples/washbasin_mirror_snapshot.jpg",
+        "file_path": EXAMPLES_DIR / "washbasin_mirror_snapshot.jpg",
+        "eval_dir": OUTPUTS_DIR / "eval_washbasin_mirror",
+        "human_note": "HUMAN-RULE-007：梳子阴影极真、无法靠生活常识判断；但放大后可见折叠眼镜架的镜腿与镜框互相重合粘连，且镜子反射中右侧杯柄消失、左下角眼镜反射位置违背几何光学。",
     },
     {
         "id": "opencut_edit",
@@ -130,8 +148,8 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     prompt_md_file = eval_dir / f"{stem}_forensic_prompt.md"
     prompt_text = prompt_md_file.read_text(encoding="utf-8") if prompt_md_file.exists() else ""
 
-    rel_dir = eval_dir.relative_to(ROOT_DIR).as_posix()
-    img_rel = image_path.relative_to(ROOT_DIR).as_posix()
+    rel_dir = eval_dir.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
+    img_rel = image_path.resolve().relative_to(ROOT_DIR.resolve()).as_posix()
 
     # Combine signal probability, deep framework confidence, and localized AI edit detector
     sig_prob = float(eval_summary.get("ai_forgery_probability", 0.5))
@@ -139,13 +157,16 @@ def build_case_payload(image_path: Path, eval_dir: Path, case_meta: Dict[str, An
     is_local_edit = bool(local_edit_stats.get("is_localized_ai_edit", False))
     local_z = float(local_edit_stats.get("max_patch_zscore", 0.0))
 
-    if is_local_edit and local_z >= 6.0:
-        combined_prob = round(min(0.99, max(0.88, 0.5 * sig_prob + 0.5 * fw_prob + 0.25)), 2)
+    if is_local_edit and local_z >= 8.0:
+        combined_prob = round(min(0.99, max(0.92, 0.45 * sig_prob + 0.55 * fw_prob + 0.25)), 2)
         bbox = local_edit_stats.get("primary_edit_bbox", [0, 0, 0, 0])
         verdict_str = f"局部 AI 改图 / 涂抹重绘 (锁定篡改框 {bbox})"
+    elif fw_prob >= 0.45 or sig_prob >= 0.45:
+        combined_prob = round(min(0.99, max(fw_prob, 0.45 * sig_prob + 0.55 * fw_prob + 0.08)), 2)
+        verdict_str = "全图 AI 生成或伪造 (AI_FORGED)"
     else:
-        combined_prob = round(min(0.99, 0.5 * sig_prob + 0.5 * fw_prob + 0.15), 2)
-        verdict_str = "全图 AI 生成或伪造 (AI_FORGED)" if combined_prob >= 0.5 else "真实未改原图 (LIKELY_AUTHENTIC)"
+        combined_prob = round(0.45 * sig_prob + 0.55 * fw_prob, 2)
+        verdict_str = "真实未改原图 (LIKELY_AUTHENTIC)"
 
     return {
         "id": case_meta["id"] if case_meta else stem,

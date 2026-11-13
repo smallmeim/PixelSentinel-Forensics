@@ -830,8 +830,19 @@
         el.classList.toggle('active', i === activeIdx);
       });
 
-      document.getElementById('verdictTitle').textContent = caseData.verdict;
-      document.getElementById('probPill').textContent = `伪造置信度 ${Math.round(caseData.combined_probability * 100)}%`;
+      const isAuth = caseData.combined_probability < 0.45;
+      const vTitle = document.getElementById('verdictTitle');
+      const pPill = document.getElementById('probPill');
+      const vBox = document.getElementById('verdictBox');
+      vTitle.textContent = caseData.verdict;
+      vTitle.style.color = isAuth ? 'var(--ok)' : 'var(--danger)';
+      pPill.textContent = `伪造置信度 ${Math.round(caseData.combined_probability * 100)}%`;
+      pPill.style.background = isAuth ? 'var(--ok)' : 'var(--danger)';
+      pPill.style.color = isAuth ? '#051510' : '#fff';
+      vBox.style.borderColor = isAuth ? 'rgba(6, 214, 160, 0.5)' : 'rgba(255, 77, 109, 0.45)';
+      vBox.style.background = isAuth
+        ? 'linear-gradient(135deg, rgba(6, 214, 160, 0.14), rgba(58, 134, 255, 0.08))'
+        : 'linear-gradient(135deg, rgba(255, 77, 109, 0.14), rgba(58, 134, 255, 0.1))';
       document.getElementById('complexityBadge').textContent =
         `背景复杂度分级：${caseData.signal_evaluation.complexity_tier} | RDD 去偏校准分：${caseData.signal_evaluation.debiased_rdd_score}`;
       document.getElementById('humanBanner').textContent = `💡 人工判别要诀：${caseData.human_note}`;
