@@ -166,6 +166,80 @@ def compute_npr_chromatic_dispersion(arr_rgb: np.ndarray) -> Dict[str, float]:
     }
 
 
+def compute_patchcraft_and_ffdn_wavelet(gray: np.ndarray) -> Dict[str, float]:
+    """
+    Operators 6 & 7 (2024-2025 SOTA Upgrade):
+    - Operator 6 (PatchCraft, 2024): Rich- vs. Poor-Texture Patch Inter-Pixel Residual Contrast
+      & Poor-Texture 4x4 Latent Harmonic SNR.
+    - Operator 7 (FFDN, ECCV 2024): 2D Haar Wavelet High-Frequency Decomposition (HH diagonal
+      subband vs LH+HL orthogonal subband energy ratio & kurtosis).
+    """
+    h, w = (gray.shape[0] // 32) * 32, (gray.shape[1] // 32) * 32
+    g = gray[:h, :w]
+
+    # 2D Haar Wavelet 1-level decomposition (FFDN WFE module)
+    gh, gw = (gray.shape[0] // 2) * 2, (gray.shape[1] // 2) * 2
+    g2 = gray[:gh, :gw]
+    a = g2[0::2, 0::2]
+    b = g2[0::2, 1::2]
+    c = g2[1::2, 0::2]
+    d = g2[1::2, 1::2]
+    lh = 0.5 * ((a + b) - (c + d))
+    hl = 0.5 * ((a + c) - (b + d))
+    hh = 0.5 * ((a + d) - (b + c))
+
+    e_hh = float(np.mean(np.abs(hh)))
+    e_ortho = 0.5 * (float(np.mean(np.abs(lh))) + float(np.mean(np.abs(hl)))) + 1e-6
+    ffdn_hh_ortho_ratio = e_hh / e_ortho
+    hh_centered = hh - float(np.mean(hh))
+    hh_var = float(np.mean(hh_centered**2)) + 1e-6
+    ffdn_hh_kurtosis = float(np.mean(hh_centered**4) / (hh_var**2))
+
+    # PatchCraft: 32x32 patch texture diversity ranking
+    pad = np.pad(g, ((1, 1), (1, 1)), mode="reflect")
+    lap = 4.0 * pad[1:-1, 1:-1] - pad[:-2, 1:-1] - pad[2:, 1:-1] - pad[1:-1, :-2] - pad[1:-1, 2:]
+
+    diversities = []
+    res_energies = []
+    poor_harmonics = []
+    for y0 in range(0, h, 32):
+        for x0 in range(0, w, 32):
+            p = g[y0 : y0 + 32, x0 : x0 + 32]
+            lp = lap[y0 : y0 + 32, x0 : x0 + 32]
+            div = (
+                float(np.mean(np.abs(p[:, 1:] - p[:, :-1])))
+                + float(np.mean(np.abs(p[1:, :] - p[:-1, :])))
+                + float(np.mean(np.abs(p[1:, 1:] - p[:-1, :-1])))
+                + float(np.mean(np.abs(p[1:, :-1] - p[:-1, 1:])))
+            )
+            diversities.append(div)
+            res_energies.append(float(np.mean(np.abs(lp))))
+            sub_clip = np.clip(lp, -6.0, 6.0)
+            f_mag = np.abs(np.fft.fft2(sub_clip - np.mean(sub_clip)))
+            med_f = float(np.median(f_mag[1:, 1:])) + 1e-5
+            poor_harmonics.append(float((0.75 * f_mag[8, 8] + 0.25 * f_mag[4, 4]) / med_f))
+
+    if len(diversities) >= 8:
+        order = np.argsort(diversities)
+        k = max(2, len(order) // 4)
+        poor_idx = order[:k]
+        rich_idx = order[-k:]
+        res_arr = np.array(res_energies, dtype=np.float32)
+        harm_arr = np.array(poor_harmonics, dtype=np.float32)
+        rich_poor_ratio = float(np.mean(res_arr[rich_idx]) / (np.mean(res_arr[poor_idx]) + 1e-5))
+        poor_vae_snr = float(np.mean(harm_arr[poor_idx]))
+    else:
+        rich_poor_ratio = 1.0
+        poor_vae_snr = 1.0
+
+    return {
+        "patchcraft_rich_poor_ratio": round(rich_poor_ratio, 4),
+        "patchcraft_poor_vae_snr": round(poor_vae_snr, 4),
+        "ffdn_hh_ortho_ratio": round(ffdn_hh_ortho_ratio, 4),
+        "ffdn_hh_kurtosis": round(min(200.0, ffdn_hh_kurtosis), 4),
+    }
+
+
 def run_universal_forensic_algorithm(image_path: Path) -> Dict[str, Any]:
     """
     Execute the content-agnostic UMSF algorithm and return a unified mathematical score & proof chain.
@@ -177,6 +251,7 @@ def run_universal_forensic_algorithm(image_path: Path) -> Dict[str, Any]:
     lattice = compute_npr_lattice_parity_and_metric(gray)
     nss = compute_ggd_and_markov_statistics(gray)
     chroma = compute_npr_chromatic_dispersion(arr)
+    pc_ffdn = compute_patchcraft_and_ffdn_wavelet(gray)
 
     score = 0.0
     proofs = []
@@ -226,10 +301,29 @@ def run_universal_forensic_algorithm(image_path: Path) -> Dict[str, Any]:
             f"MARKOV_TRANSITION_ENTROPY_SHIFT: 一阶像素差分马尔可夫 81 态转移联合熵异常 ({mh} bits，真图基准≈5.25 bits) (+0.15)"
         )
 
+    # Law 6 (PatchCraft, 2024): Rich- vs. Poor-Texture Patch Residual Contrast & Poor-Texture 4x4 Harmonic SNR
+    pc_ratio = pc_ffdn["patchcraft_rich_poor_ratio"]
+    pc_snr = pc_ffdn["patchcraft_poor_vae_snr"]
+    if pc_ratio > 6.5 or pc_snr > 2.45:
+        score += 0.30
+        proofs.append(
+            f"PATCHCRAFT_RICH_POOR_TEXTURE_CONTRAST: 富纹理与弱纹理块残差对比度异常 (Ratio={pc_ratio}, "
+            f"弱纹理块 4x4 谐波 SNR={pc_snr})，命中 PatchCraft 跨纹理生成式伪影 (+0.30)"
+        )
+
+    # Law 7 (FFDN, ECCV 2024): 2D Haar Wavelet HH Diagonal Subband Kurtosis & Cross-Band Ratio
+    hh_ratio = pc_ffdn["ffdn_hh_ortho_ratio"]
+    hh_kurt = pc_ffdn["ffdn_hh_kurtosis"]
+    if hh_ratio < 0.44 or hh_kurt > 38.0:
+        score += 0.20
+        proofs.append(
+            f"FFDN_WAVELET_HH_SUBBAND_ANOMALY: 2D Haar 小波对角高频 HH 子带正交比 ({hh_ratio}) 或峰度 ({hh_kurt}) 异常 (+0.20)"
+        )
+
     if not proofs:
         proofs.append(
             f"UNIVERSAL_OPTICAL_LAWS_SATISFIED: 2x2晶格奇偶比 ({lattice['lattice_jump_ratio_2x2']}≈1.0)、"
-            f"GGD矩比率 ({ggd})、频谱各向同性 ({aniso}) 与拜耳色散 ({c_asym}) 全部符合真实相机物理定律"
+            f"GGD矩比率 ({ggd})、PatchCraft纹理对比 ({pc_ratio}) 与拜耳色散 ({c_asym}) 全部符合真实相机物理定律"
         )
         score = 0.05
 
@@ -240,6 +334,7 @@ def run_universal_forensic_algorithm(image_path: Path) -> Dict[str, Any]:
         "lattice_npr_metrics": lattice,
         "natural_scene_statistics": nss,
         "npr_chromatic_metrics": chroma,
+        "patchcraft_ffdn_metrics": pc_ffdn,
         "universal_mathematical_proofs": proofs,
     }
 

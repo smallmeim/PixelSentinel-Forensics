@@ -96,6 +96,11 @@ def compute_physics_features(bgr: np.ndarray) -> np.ndarray:
     halo_count = float(np.sum((gray >= 0.38) & (gray < 0.62)))
     edge_halo_ratio = halo_count / core_count
 
+    # 9-12. PatchCraft (2024) & FFDN Wavelet HH Subband (ECCV 2024)
+    from universal_forensic_algorithm import compute_patchcraft_and_ffdn_wavelet
+
+    pc_ffdn = compute_patchcraft_and_ffdn_wavelet(gray * 255.0)
+
     return np.array(
         [
             bayer_asymmetry,
@@ -106,6 +111,10 @@ def compute_physics_features(bgr: np.ndarray) -> np.ndarray:
             baseline_jitter_std,
             paper_noise_std,
             edge_halo_ratio,
+            float(pc_ffdn["patchcraft_rich_poor_ratio"]),
+            float(pc_ffdn["patchcraft_poor_vae_snr"]),
+            float(pc_ffdn["ffdn_hh_ortho_ratio"]),
+            float(pc_ffdn["ffdn_hh_kurtosis"]),
         ],
         dtype=np.float32,
     )
@@ -231,9 +240,9 @@ class ResBlock(nn.Module):
 
 
 class HomeworkForensicNet(nn.Module):
-    """Dual-Branch Network: 4-ch SRM/NPR Spatial ResNet + 8-dim Handwriting Physics MLP."""
+    """Dual-Branch Network: 4-ch SRM/NPR Spatial ResNet + 12-dim SOTA Physics MLP."""
 
-    def __init__(self, num_phys_features: int = 8) -> None:
+    def __init__(self, num_phys_features: int = 12) -> None:
         super().__init__()
         # Branch A: Spatial micro-texture + lattice CNN
         self.stem = nn.Sequential(
@@ -367,7 +376,7 @@ def main() -> None:
     val_loader = DataLoader(val_ds, batch_size=16, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_ds, batch_size=16, shuffle=False, num_workers=0)
 
-    model = HomeworkForensicNet(num_phys_features=8).to(device)
+    model = HomeworkForensicNet(num_phys_features=12).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     epochs = 20

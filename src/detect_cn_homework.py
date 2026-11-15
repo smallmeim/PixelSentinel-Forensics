@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from opencut_forensics import analyze_opencut_tampering
 from train_cn_homework_detector import (
     CHECKPOINT_PATH,
     DATASET_DIR,
@@ -34,6 +35,10 @@ PHYS_NAMES = [
     "baseline_jitter_std",
     "paper_noise_std",
     "edge_halo_ratio",
+    "patchcraft_rich_poor_ratio",
+    "patchcraft_poor_vae_snr",
+    "ffdn_hh_ortho_ratio",
+    "ffdn_hh_kurtosis",
 ]
 
 
@@ -44,6 +49,7 @@ def predict_image(
     feat_mean: np.ndarray,
     feat_std: np.ndarray,
     device: torch.device,
+    out_dir: Path,
 ) -> Dict:
     bgr = cv2.imread(str(image_path))
     if bgr is None:
@@ -59,16 +65,51 @@ def predict_image(
 
     logits = model(crops_t, phys_t)
     probs = F.softmax(logits, dim=1)[:, 1]
-    ai_prob = float(probs.mean().item())
-    verdict = "AI-CLONED HOMEWORK" if ai_prob >= 0.5 else "REAL STUDENT HANDWRITING"
+    neural_prob = float(probs.mean().item())
+
+    pf = {name: round(float(val), 5) for name, val in zip(PHYS_NAMES, raw_phys)}
+
+    # 1. Frontier Diffusion Physics Gate (PatchCraft 2024 + FFDN Wavelet HH 2024 + VAE 4x4 Harmonic)
+    phys_gate_prob = 0.0
+    if pf["vae_harmonic_4x4"] >= 3.2 and (
+        pf["ffdn_hh_kurtosis"] >= 24.5
+        or pf["patchcraft_poor_vae_snr"] >= 2.2
+        or pf["bayer_r_g_b_asymmetry"] <= 0.0005
+    ):
+        phys_gate_prob = min(
+            0.98,
+            0.55
+            + 0.08 * max(0.0, pf["vae_harmonic_4x4"] - 3.0)
+            + 0.02 * max(0.0, pf["ffdn_hh_kurtosis"] - 23.0),
+        )
+
+    # 2. AAAI 2025 DAF + OpenCut Intra-Page Peer Token Calibration (catches local 2% edits)
+    oc_res = analyze_opencut_tampering(image_path, out_dir)
+    is_opencut = bool(oc_res.get("is_opencut_tampered", False))
+    opencut_prob = float(oc_res.get("opencut_confidence", 0.0)) if is_opencut else 0.0
+
+    ai_prob = max(neural_prob, phys_gate_prob, opencut_prob)
+    if is_opencut and neural_prob < 0.5 and phys_gate_prob < 0.5:
+        verdict = "OPENCUT-TAMPERED HOMEWORK"
+    elif ai_prob >= 0.5:
+        verdict = "AI-CLONED HOMEWORK"
+    else:
+        verdict = "REAL STUDENT HANDWRITING"
 
     return {
         "image": str(image_path),
         "verdict": verdict,
         "ai_probability": round(ai_prob, 4),
+        "neural_branch_prob": round(neural_prob, 4),
+        "physics_gate_prob": round(phys_gate_prob, 4),
+        "opencut_local_tampered": is_opencut,
+        "opencut_max_peer_zscore": oc_res.get("max_peer_zscore", 0.0),
+        "opencut_primary_bbox": (
+            oc_res["primary_opencut_token"]["bbox"] if oc_res.get("primary_opencut_token") else None
+        ),
         "real_probability": round(1.0 - ai_prob, 4),
         "crop_ai_probs": [round(float(p), 4) for p in probs.cpu().tolist()],
-        "physics_features": {name: round(float(val), 5) for name, val in zip(PHYS_NAMES, raw_phys)},
+        "physics_features": pf,
         "bgr": bgr,
         "tensor_4ch": tensor_4ch,
     }
@@ -79,9 +120,22 @@ def save_forensic_panel(result: Dict, out_path: Path) -> None:
     t4 = result["tensor_4ch"]
     h, w = bgr.shape[:2]
 
-    # Panel 1: Original image with verdict header
+    # Panel 1: Original image with verdict header + local OpenCut bbox if present
     p1 = bgr.copy()
     is_ai = result["ai_probability"] >= 0.5
+    if result.get("opencut_local_tampered") and result.get("opencut_primary_bbox"):
+        bx0, by0, bx1, by1 = result["opencut_primary_bbox"]
+        cv2.rectangle(p1, (bx0, by0), (bx1, by1), (0, 0, 255), 2)
+        cv2.putText(
+            p1,
+            f"OpenCut Z={result['opencut_max_peer_zscore']:.2f}s",
+            (bx0, max(54, by0 - 6)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
     banner_color = (30, 30, 200) if is_ai else (30, 150, 40)
     cv2.rectangle(p1, (0, 0), (w, 42), banner_color, -1)
     cv2.putText(
@@ -89,7 +143,7 @@ def save_forensic_panel(result: Dict, out_path: Path) -> None:
         f"{result['verdict']} (AI={result['ai_probability']:.1%})",
         (10, 28),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.58,
+        0.54,
         (255, 255, 255),
         2,
         cv2.LINE_AA,
@@ -101,21 +155,21 @@ def save_forensic_panel(result: Dict, out_path: Path) -> None:
     cv2.rectangle(p2, (0, 0), (w, 42), (35, 35, 35), -1)
     cv2.putText(p2, "SRM Laplacian Residual", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
 
-    # Panel 3: NPR 2x2 parity residual map + physics summary
+    # Panel 3: NPR 2x2 parity residual map + SOTA 12-dim physics summary
     npr_vis = np.clip((np.abs(t4[3]) * 255.0), 0, 255).astype(np.uint8)
     p3 = cv2.applyColorMap(npr_vis, cv2.COLORMAP_VIRIDIS)
     cv2.rectangle(p3, (0, 0), (w, 42), (35, 35, 35), -1)
-    cv2.putText(p3, "NPR 2x2 Parity Lattice", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(p3, "NPR 2x2 + PatchCraft/FFDN", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
 
     pf = result["physics_features"]
     lines = [
-        f"bayer_asym: {pf['bayer_r_g_b_asymmetry']:.4f}",
-        f"npr_dev:    {pf['npr_jump_2x2_dev']:.4f}",
-        f"vae_4x4:    {pf['vae_harmonic_4x4']:.2f}",
-        f"ink_cv:     {pf['stroke_ink_cv']:.4f}",
-        f"halo_ratio: {pf['edge_halo_ratio']:.4f}",
+        f"bayer_asym:  {pf['bayer_r_g_b_asymmetry']:.4f}",
+        f"vae_4x4:     {pf['vae_harmonic_4x4']:.2f}",
+        f"pc_poor_snr: {pf['patchcraft_poor_vae_snr']:.2f}",
+        f"ffdn_kurt:   {pf['ffdn_hh_kurtosis']:.2f}",
+        f"daf_zscore:  {result.get('opencut_max_peer_zscore', 0.0):.2f}s",
     ]
-    cv2.rectangle(p3, (6, h - 118), (245, h - 6), (20, 20, 20), -1)
+    cv2.rectangle(p3, (6, h - 118), (255, h - 6), (20, 20, 20), -1)
     for idx, line in enumerate(lines):
         cv2.putText(p3, line, (14, h - 95 + idx * 20), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (235, 235, 235), 1, cv2.LINE_AA)
 
@@ -125,14 +179,15 @@ def save_forensic_panel(result: Dict, out_path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Detect AI-cloned Chinese student homework images.")
+    parser = argparse.ArgumentParser(description="Detect AI-cloned and OpenCut-tampered Chinese student homework.")
     parser.add_argument("images", nargs="*", help="Paths to homework images to analyze.")
     parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR), help="Directory for visual forensic panels.")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=True)
-    model = HomeworkForensicNet(num_phys_features=8).to(device)
+    n_phys = int(len(ckpt["feat_mean"]))
+    model = HomeworkForensicNet(num_phys_features=n_phys).to(device)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
 
@@ -150,7 +205,7 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     results: List[Dict] = []
     for img_path in targets:
-        res = predict_image(img_path, model, feat_mean, feat_std, device)
+        res = predict_image(img_path, model, feat_mean, feat_std, device, out_dir)
         panel_path = out_dir / f"{img_path.stem}_forensic.jpg"
         save_forensic_panel(res, panel_path)
         res_clean = {k: v for k, v in res.items() if k not in ("bgr", "tensor_4ch")}
