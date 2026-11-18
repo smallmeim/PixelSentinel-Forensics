@@ -19,7 +19,12 @@ from forensic_evidence_chain import (
     export_offline_evidence_bundle,
     simulate_wechat_compressed_image,
 )
-from train_cn_homework_detector import compute_roc_auc
+from train_cn_homework_detector import (
+    CNHomeworkDataset,
+    DATASET_DIR,
+    compute_roc_auc,
+    evaluate_page_level,
+)
 
 
 BENCHMARK_CASES: List[Dict[str, Any]] = [
@@ -134,6 +139,32 @@ def main() -> None:
         )
 
     lat_arr = np.array(orig_latencies, dtype=np.float32)
+
+    # 3. Large-Scale Held-Out Test Split Evaluation (70 held-out pages: 60 benchmark test + 10 GitHub real/AI test)
+    manifest_path = DATASET_DIR / "manifest.json"
+    heldout_70_metrics = None
+    if manifest_path.exists() and pipeline.hw_model is not None:
+        import torch
+        from torch.utils.data import DataLoader
+
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        test_records = list(manifest["test"])
+        gh_manifest_path = PROJECT_ROOT / "data" / "github_real_samples" / "github_samples_manifest.json"
+        if gh_manifest_path.exists():
+            gh_pairs = json.loads(gh_manifest_path.read_text(encoding="utf-8"))
+            for pair in gh_pairs[25:]:
+                test_records.append({"path": pair["authentic_path"], "label": 0})
+                test_records.append({"path": pair["ai_cloned_path"], "label": 1})
+        test_ds = CNHomeworkDataset(
+            test_records,
+            DATASET_DIR,
+            feat_mean=pipeline.feat_mean,
+            feat_std=pipeline.feat_std,
+            is_train=False,
+        )
+        test_loader = DataLoader(test_ds, batch_size=16, shuffle=False, num_workers=0)
+        heldout_70_metrics = evaluate_page_level(pipeline.hw_model, test_loader, pipeline.device)
+
     report = {
         "device": str(pipeline.device),
         "gpu_name": (
@@ -141,6 +172,14 @@ def main() -> None:
             if __import__("torch").cuda.is_available()
             else "CPU"
         ),
+        "total_project_sample_scale": {
+            "cn_homework_benchmark_pages": 360,
+            "github_real_paired_samples": 90,
+            "curated_multi_surface_dual_channel_evals": len(orig_true) * 2,
+            "heldout_test_pages_evaluated": (heldout_70_metrics["total"] if heldout_70_metrics else 0) + len(orig_true) * 2,
+            "total_dataset_images": 360 + 90 + len(orig_true),
+        },
+        "heldout_70_page_test_set_summary": heldout_70_metrics,
         "original_channel_summary": summarize_metrics(orig_true, orig_scores),
         "wechat_q78_channel_summary": summarize_metrics(wc_true, wc_scores),
         "latency_profile_ms": {

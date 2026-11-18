@@ -12,6 +12,7 @@ env/
 outputs/
 report_out/
 data/cn_homework_dataset/
+data/github_real_samples/
 *.pt
 *.pth
 *.ckpt

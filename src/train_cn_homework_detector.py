@@ -183,6 +183,12 @@ class CNHomeworkDataset(Dataset):
             bgr = cv2.imread(str(img_path))
             if bgr is None:
                 continue
+            bh, bw = bgr.shape[:2]
+            if bh > 768 or bw > 768:
+                # 1:1 pixel center crop to preserve native 2x2/4x4 sensor & VAE lattice without interpolation
+                cy, cx = bh // 2, bw // 2
+                ch, cw = min(bh, 512), min(bw, 512)
+                bgr = bgr[cy - ch // 2 : cy - ch // 2 + ch, cx - cw // 2 : cx - cw // 2 + cw].copy()
             tensors.append(build_4ch_tensor(bgr))
             raw_feats.append(compute_physics_features(bgr))
             labels.append(int(rec["label"]))
@@ -353,6 +359,21 @@ def main() -> None:
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
+    gh_manifest_path = PROJECT_ROOT / "data" / "github_real_samples" / "github_samples_manifest.json"
+    gh_test_records: List[Dict] = []
+    if gh_manifest_path.exists():
+        gh_pairs = json.loads(gh_manifest_path.read_text(encoding="utf-8"))
+        for idx, pair in enumerate(gh_pairs):
+            rec_real = {"path": pair["authentic_path"], "label": 0}
+            rec_ai = {"path": pair["ai_cloned_path"], "label": 1}
+            if idx < 20:
+                manifest["train"].extend([rec_real, rec_ai])
+            elif idx < 25:
+                manifest["val"].extend([rec_real, rec_ai])
+            else:
+                manifest["test"].extend([rec_real, rec_ai])
+                gh_test_records.extend([rec_real, rec_ai])
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
 
@@ -447,9 +468,27 @@ def main() -> None:
     model.load_state_dict(ckpt["model_state_dict"])
     test_metrics = evaluate_page_level(model, test_loader, device)
 
+    gh_test_metrics = None
+    if gh_test_records:
+        gh_test_ds = CNHomeworkDataset(
+            gh_test_records,
+            DATASET_DIR,
+            feat_mean=train_ds.feat_mean,
+            feat_std=train_ds.feat_std,
+            is_train=False,
+        )
+        gh_test_loader = DataLoader(gh_test_ds, batch_size=16, shuffle=False, num_workers=0)
+        gh_test_metrics = evaluate_page_level(model, gh_test_loader, device)
+
     summary = {
         "device": device_name,
         "torch_version": torch.__version__,
+        "dataset_sizes": {
+            "train_pages": len(manifest["train"]),
+            "val_pages": len(manifest["val"]),
+            "test_pages": len(manifest["test"]),
+            "total_pages": len(manifest["train"]) + len(manifest["val"]) + len(manifest["test"]),
+        },
         "n_params": n_params,
         "checkpoint": str(CHECKPOINT_PATH),
         "checkpoint_size_kb": round(CHECKPOINT_PATH.stat().st_size / 1024.0, 1),
@@ -457,6 +496,7 @@ def main() -> None:
         "best_val_acc": best_val_acc,
         "best_val_roc_auc": best_val_auc,
         "test_metrics": test_metrics,
+        "github_heldout_test_metrics": gh_test_metrics,
         "history_tail": history[-5:],
     }
     print(json.dumps(summary, indent=2, ensure_ascii=False))
