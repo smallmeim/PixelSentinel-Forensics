@@ -70,5 +70,14 @@
     "human_observation": "针对微信转账账单详情等社交平台凭证伪造，PS或AI改数会导致金额行同向基线错位（如88500下沉+4.5px）、左列标签轴或右列数值轴X坐标偏移（如+7px/+10px），以及WeChat Sans与宋体/雅黑等跨字体拼贴抗锯齿斜率冲突。",
     "model_missed_why": "",
     "compiled_prompt_rule": "若待检图为微信支付账单、聊天转账气泡或支付宝回单等UI截图，必须严格沿水平基线比对大额金额各位数字与货币符号是否存在上下像素错位，沿垂直基准线比对左侧标签列与右侧数值列是否严格左对齐，并检查篡改数字与原生WeChat Sans字体的笔画粗细及抗锯齿边缘是否一致。"
+  },
+  {
+    "rule_id": "HUMAN-RULE-009",
+    "timestamp": "2026-11-18T08:49:00",
+    "sample_image": "examples/mj5_market_vendor.png",
+    "category": "DFAT Taxonomy-Guided Model-Specific Inspection & Reference Mandate (arXiv:2610.23144v2)",
+    "human_observation": "不同生成模型家族的伪影截然不同：SD3.5与GPT-5表现为全局过度完美理想化风格、主体过锐而背景过度简化虚化的景深断层、以及皮肤/表面高频微孔缺失；而StyleGAN3/GRAM-HD在4x放大下会暴露出特有的椭圆形/菱形周期性微纹理及眼镜/耳环/衣领左右不对称。混用通用规则会导致真图误报上升。",
+    "model_missed_why": "单一通用阈值把GAN与Diffusion/MLLM的反向特征混为一谈，导致在SD3.5上准确率下降且在真实照片上产生假阳性；同时缺少并排真图基准（Reference Mandate）对比。",
+    "compiled_prompt_rule": "【DFAT分模型家族与先全局后局部铁律（人类专家规则 #9）】：遵循 Global-to-Local 流程并与真实相机基准图（Reference Mandate）并排比对：(1) 若全局呈现过度精致理想化光影、前景极锐而背景骤糊简化、表面缺乏自然毛孔/微纹理，归入 SD3.5/GPT-5 扩散与多模态家族伪影；(2) 若全局自然但局部 4x 放大后平滑表面出现椭圆形/菱形（Oval/Diamond）规则微纹理，或眼镜架/耳环/衣领出现左右几何不对称与边界融合，归入 StyleGAN3/GRAM-HD 家族伪影；(3) 若具备真实镜头 Bayer 色散且无上述家族特征，则保护为真实相机照片，严禁泛化误判。"
   }
 ]
